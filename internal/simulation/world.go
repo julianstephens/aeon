@@ -12,11 +12,6 @@ import (
 	"github.com/julianstephens/go-utils/logger"
 )
 
-const (
-	DefaultWorldWidth  = 65
-	DefaultWorldHeight = 65
-)
-
 type Settlement struct {
 	Name     string
 	Location simtypes.Position
@@ -38,11 +33,11 @@ type World struct {
 func NewWorld(seed string) (*World, error) {
 	logger.WithFields(map[string]interface{}{
 		"seed":   seed,
-		"width":  DefaultWorldWidth,
-		"height": DefaultWorldHeight,
+		"width":  simtypes.DefaultMapWidth,
+		"height": simtypes.DefaultMapHeight,
 	}).Debug("creating new world")
 
-	terrainMap := simtypes.NewTerrainMap(DefaultWorldWidth, DefaultWorldHeight)
+	terrainMap := simtypes.NewTerrainMap(simtypes.DefaultMapWidth, simtypes.DefaultMapHeight)
 	seedHash := sha256.Sum256([]byte(seed))
 	random := rng.NewRNG(seedHash)
 	world := &World{
@@ -50,7 +45,7 @@ func NewWorld(seed string) (*World, error) {
 		random:           random,
 		CurrentYear:      0,
 		terrainMap:       terrainMap,
-		terrainGenerator: layers.NewGenerator(DefaultWorldWidth, DefaultWorldHeight, random),
+		terrainGenerator: layers.NewGenerator(simtypes.DefaultMapWidth, simtypes.DefaultMapHeight, random),
 		agents:           []*Agent{},
 		settlements:      []Settlement{},
 		historicalEvents: []string{},
@@ -129,7 +124,7 @@ func (w *World) PrintPopulationDetails() {
 }
 
 func generateTerrainMap(w *World) (err error) {
-	err = w.terrainGenerator.GenerateTerrainMap(&w.terrainMap)
+	err = w.terrainGenerator.GenerateTerrainMap(w.seed, &w.terrainMap)
 	return
 }
 

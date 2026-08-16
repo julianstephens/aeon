@@ -18,11 +18,11 @@ func NewDSGenerator(size int, random *rng.RNG) *DSGenerator {
 	}
 }
 
-// Generate creates a new ElevationMap using the Diamond-Square algorithm.
+// Generate creates a new LayerMap using the Diamond-Square algorithm.
 // Based on https://janert.me/blog/2022/the-diamond-square-algorithm-for-terrain-generation/
-// -> d = ElevationMap, i/j = x/y coordinates, n = ds.size, w = ds.size-1 = step, v = (ds.size-1) // 2, s = roughness
-func (ds *DSGenerator) Generate() *simtypes.ElevationMap {
-	m := &simtypes.ElevationMap{
+// -> d = LayerMap, i/j = x/y coordinates, n = ds.size, w = ds.size-1 = step, v = (ds.size-1) // 2, s = roughness
+func (ds *DSGenerator) Generate() *simtypes.LayerMap {
+	m := &simtypes.LayerMap{
 		Width:  ds.size,
 		Height: ds.size,
 		Values: make([]float64, ds.size*ds.size),
@@ -44,14 +44,14 @@ func (ds *DSGenerator) Generate() *simtypes.ElevationMap {
 	return m
 }
 
-func (ds *DSGenerator) initializeCorners(m *simtypes.ElevationMap) {
+func (ds *DSGenerator) initializeCorners(m *simtypes.LayerMap) {
 	m.Set(0, 0, ds.random.Elevation(nil))
 	m.Set(0, ds.size-1, ds.random.Elevation(nil))
 	m.Set(ds.size-1, 0, ds.random.Elevation(nil))
 	m.Set(ds.size-1, ds.size-1, ds.random.Elevation(nil))
 }
 
-func (ds *DSGenerator) diamondStep(m *simtypes.ElevationMap, start int, step int, roughness float64) {
+func (ds *DSGenerator) diamondStep(m *simtypes.LayerMap, start int, step int, roughness float64) {
 	diamond := [][]int{
 		{-1, -1},
 		{-1, 1},
@@ -66,7 +66,7 @@ func (ds *DSGenerator) diamondStep(m *simtypes.ElevationMap, start int, step int
 	}
 }
 
-func (ds *DSGenerator) squareStep(m *simtypes.ElevationMap, start int, step int, roughness float64) {
+func (ds *DSGenerator) squareStep(m *simtypes.LayerMap, start int, step int, roughness float64) {
 	square := [][]int{
 		{-1, 0},
 		{0, -1},
@@ -91,7 +91,7 @@ func (ds *DSGenerator) squareStep(m *simtypes.ElevationMap, start int, step int,
 
 // Compute the average of the surrounding points for the diamond and square steps.
 // Uses fixed boundary conditions, meaning that points outside the map are ignored in the average calculation.
-func (ds *DSGenerator) getAverage(m *simtypes.ElevationMap, x, y, step int, offsets [][]int) float64 {
+func (ds *DSGenerator) getAverage(m *simtypes.LayerMap, x, y, step int, offsets [][]int) float64 {
 	var sum float64
 	var count int
 

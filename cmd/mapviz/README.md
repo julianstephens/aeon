@@ -77,21 +77,4 @@ Changing the seed produces a different deterministic world:
 go run ./cmd/mapviz -seed 1337 -layer elevation -output world-1337.png
 ```
 
-## What to Look For
 
-When inspecting the elevation layer, look for broad, spatially coherent features rather than isolated pixel-scale variation.
-
-For diamond-square generation in particular, the elevation image should make it easy to spot:
-
-- large-scale elevation gradients
-- clustered high and low areas
-- abrupt or unintended discontinuities
-- boundary artifacts
-- excessive uniformity
-- excessive high-frequency noise
-
-Inspect intermediate layers independently before relying on the final terrain classification. This helps distinguish problems in layer generation from problems in terrain classification.
-
-## Scope
-
-`mapviz` intentionally has no persistence, server, or frontend dependencies. It should remain a small command-line debugging tool for terrain-generation work.

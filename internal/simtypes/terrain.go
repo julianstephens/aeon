@@ -11,26 +11,26 @@ type Position struct {
 	X, Y int
 }
 
-type ElevationMap struct {
+type LayerMap struct {
 	Width  int
 	Height int
 	Values []float64
 }
 
-func NewElevationMap(width, height int) *ElevationMap {
-	return &ElevationMap{
+func NewLayerMap(width, height int) *LayerMap {
+	return &LayerMap{
 		Width:  width,
 		Height: height,
 		Values: make([]float64, width*height),
 	}
 }
 
-func (em *ElevationMap) Get(x, y int) float64 {
+func (em *LayerMap) Get(x, y int) float64 {
 	return em.Values[y*em.Width+x]
 }
 
-func (em *ElevationMap) Set(x, y int, elevation float64) {
-	em.Values[y*em.Width+x] = elevation
+func (em *LayerMap) Set(x, y int, value float64) {
+	em.Values[y*em.Width+x] = value
 }
 
 type TerrainType int
@@ -89,8 +89,8 @@ func (tm *TerrainMap) SetInitialized(initialized bool) {
 	tm.initialized = initialized
 }
 
-// ApplyElevation applies the given ElevationMap to the TerrainMap, updating the Elevation field of each TerrainCell.
-func (tm *TerrainMap) ApplyElevation(layer ElevationMap) {
+// ApplyElevation applies the given LayerMap to the TerrainMap, updating the Elevation field of each TerrainCell.
+func (tm *TerrainMap) ApplyElevation(layer *LayerMap) {
 	for x := 0; x < tm.Width; x++ {
 		for y := 0; y < tm.Height; y++ {
 			elevation := layer.Get(x, y)
@@ -101,5 +101,23 @@ func (tm *TerrainMap) ApplyElevation(layer ElevationMap) {
 	}
 }
 
-// func (tm *TerrainMap) ApplyMoisture(layer MoistureMap)
-// func (tm *TerrainMap) ApplyFertility(layer FertilityMap)
+func (tm *TerrainMap) ApplyMoisture(layer *LayerMap) {
+	for x := 0; x < tm.Width; x++ {
+		for y := 0; y < tm.Height; y++ {
+			moisture := layer.Get(x, y)
+			cell := tm.GetCell(x, y)
+			cell.Moisture = moisture
+			tm.SetCell(x, y, *cell)
+		}
+	}
+}
+func (tm *TerrainMap) ApplyFertility(layer *LayerMap) {
+	for x := 0; x < tm.Width; x++ {
+		for y := 0; y < tm.Height; y++ {
+			fertility := layer.Get(x, y)
+			cell := tm.GetCell(x, y)
+			cell.Fertility = fertility
+			tm.SetCell(x, y, *cell)
+		}
+	}
+}

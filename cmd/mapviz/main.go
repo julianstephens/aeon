@@ -66,7 +66,10 @@ func main() {
 		"output": outputPath,
 	}).Info("generating map visualization")
 
-	tm, elevation := generateTerrainMap(seed)
+	tm, elevation, err := generateTerrainMap(seed)
+	if err != nil {
+		logger.Fatalf("failed to generate terrain map: %v", err)
+	}
 
 	img, err := renderLayer(tm, elevation, LayerType(layerName), scale)
 	if err != nil {
@@ -135,7 +138,7 @@ func configureLogLevel(args *cliutil.Args) {
 	}
 }
 
-func generateTerrainMap(seed uint64) (simtypes.TerrainMap, *simtypes.ElevationMap) {
+func generateTerrainMap(seed uint64) (simtypes.TerrainMap, *simtypes.LayerMap, error) {
 	seedBytes := sha256.Sum256(fmt.Appendf(nil, "%d", seed))
 	random := rng.NewRNG(seedBytes)
 
@@ -144,16 +147,35 @@ func generateTerrainMap(seed uint64) (simtypes.TerrainMap, *simtypes.ElevationMa
 		simtypes.DefaultMapHeight,
 	)
 
-	elevationGenerator := layers.NewDSGenerator(max(tm.Width, tm.Height), random)
-	elevation := elevationGenerator.Generate()
-	tm.ApplyElevation(*elevation)
+	generator := layers.NewGenerator(max(tm.Width, tm.Height), max(tm.Width, tm.Height), random)
+	if err := generator.GenerateTerrainMap(seedBytes, &tm); err != nil {
+		return simtypes.TerrainMap{}, nil, err
+	}
 
-	return tm, elevation
+	elevation := elevationLayerFromTerrain(tm)
+
+	return tm, elevation, nil
+}
+
+func elevationLayerFromTerrain(tm simtypes.TerrainMap) *simtypes.LayerMap {
+	layer := simtypes.NewLayerMap(tm.Width, tm.Height)
+
+	for y := 0; y < tm.Height; y++ {
+		for x := 0; x < tm.Width; x++ {
+			cell := tm.GetCell(x, y)
+			if cell == nil {
+				continue
+			}
+			layer.Set(x, y, cell.Elevation)
+		}
+	}
+
+	return layer
 }
 
 func renderLayer(
 	tm simtypes.TerrainMap,
-	elevation *simtypes.ElevationMap,
+	elevation *simtypes.LayerMap,
 	layer LayerType,
 	scale int,
 ) (image.Image, error) {
@@ -209,7 +231,7 @@ func renderTerrainMap(tm simtypes.TerrainMap, scale int) image.Image {
 	return img
 }
 
-func renderElevationMap(em simtypes.ElevationMap, width, height, scale int) image.Image {
+func renderElevationMap(em simtypes.LayerMap, width, height, scale int) image.Image {
 	img := image.NewGray(image.Rect(0, 0, width*scale, height*scale))
 	minValue, maxValue := math.Inf(1), math.Inf(-1)
 
