@@ -161,10 +161,3 @@ func isIsolatedWater(neighboringTypes map[simtypes.TerrainType]int) (bool, simty
 	}
 	return true, newTerrainType
 }
-
-type TerrainSmoother struct{}
-
-// Smooth takes a terrain map and applies smoothing to the terrain types to create more natural transitions.
-func (ts *TerrainSmoother) Smooth(terrainMap *simtypes.TerrainMap) *simtypes.TerrainMap {
-	return nil
-}
