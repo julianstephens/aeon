@@ -42,6 +42,41 @@ const (
 	TerrainTypeWater    // impassible
 )
 
+func isValidTerrainType(tt TerrainType) bool {
+	switch tt {
+	case TerrainTypePlains, TerrainTypeForest, TerrainTypeMountain, TerrainTypeWater:
+		return true
+	default:
+		return false
+	}
+}
+
+func (tt TerrainType) IsPassable() bool {
+	switch tt {
+	case TerrainTypePlains, TerrainTypeForest:
+		return true
+	case TerrainTypeMountain, TerrainTypeWater:
+		return false
+	default:
+		return false
+	}
+}
+
+func (tt TerrainType) String() string {
+	switch tt {
+	case TerrainTypePlains:
+		return "Plains"
+	case TerrainTypeForest:
+		return "Forest"
+	case TerrainTypeMountain:
+		return "Mountain"
+	case TerrainTypeWater:
+		return "Water"
+	default:
+		return "Unknown"
+	}
+}
+
 type TerrainCell struct {
 	Location     Position
 	Terrain      TerrainType
@@ -117,6 +152,21 @@ func (tm *TerrainMap) ApplyFertility(layer *LayerMap) {
 			fertility := layer.Get(x, y)
 			cell := tm.GetCell(x, y)
 			cell.Fertility = fertility
+			tm.SetCell(x, y, *cell)
+		}
+	}
+}
+
+func (tm *TerrainMap) ApplyTerrain(layer *LayerMap) {
+	for x := 0; x < tm.Width; x++ {
+		for y := 0; y < tm.Height; y++ {
+			terrainValue := layer.Get(x, y)
+			cell := tm.GetCell(x, y)
+			terrainType := TerrainType(int(terrainValue))
+			if !isValidTerrainType(terrainType) {
+				terrainType = TerrainTypePlains // default to plains if invalid
+			}
+			cell.Terrain = terrainType
 			tm.SetCell(x, y, *cell)
 		}
 	}

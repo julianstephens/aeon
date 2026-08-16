@@ -30,24 +30,6 @@ const (
 
 	MinWealth = 0
 	MaxWealth = 1000
-
-	// Terrain attribute ranges
-	WaterThreshold    = 0.35
-	MountainThreshold = 0.85
-	ForestMoisture    = 0.60
-
-	WaterTarget    = 0.35
-	PlainsTarget   = 0.35
-	ForestTarget   = 0.22
-	MountainTarget = 0.08
-
-	MinWaterRegionSize = 8
-
-	MinSettlementDistance = 12
-
-	PlainsFoodCapacity   = 100.0
-	ForestFoodCapacity   = 75.0
-	MountainFoodCapacity = 15.0
 )
 
 type RNG struct {
