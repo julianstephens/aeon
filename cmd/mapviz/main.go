@@ -59,8 +59,6 @@ func main() {
 		if err := render(cli.Render); err != nil {
 			ctx.Fatalf("render failed: %v", err)
 		}
-	default:
-		ctx.Fatalf("unknown command %q", ctx.Command())
 	}
 }
 
@@ -84,8 +82,7 @@ func render(cli RenderCommand) error {
 		return fmt.Errorf("failed to render layer: %w", err)
 	}
 
-	outputDir := filepath.Dir(outputPath)
-	if outputDir != "." {
+	if outputDir := filepath.Dir(outputPath); outputDir != "." {
 		if err := os.MkdirAll(outputDir, 0o750); err != nil {
 			return fmt.Errorf("failed to create output directory: %w", err)
 		}
@@ -116,13 +113,8 @@ func analyze(seed uint64) error {
 	fmt.Printf("Map: %dx%d\n\n", tm.Width, tm.Height)
 
 	printScalarStats("Elevation", *elevation)
-	printScalarStats("Moisture", layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 {
-		return cell.Moisture
-	}))
-	printScalarStats("Fertility", layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 {
-		return cell.Fertility
-	}))
-
+	printScalarStats("Moisture", layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 { return cell.Moisture }))
+	printScalarStats("Fertility", layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 { return cell.Fertility }))
 	printTerrainDistribution(*tm)
 	printConnectedRegions(*tm)
 	printTerrainBoundaries(*tm)
@@ -170,25 +162,11 @@ func printScalarStats(name string, layer simtypes.Layer) {
 }
 
 func printTerrainDistribution(tm simtypes.TerrainMap) {
-	counts := map[simtypes.TerrainType]int{}
+	counts := terrainCounts(tm)
 	total := tm.Width * tm.Height
 
-	for y := 0; y < tm.Height; y++ {
-		for x := 0; x < tm.Width; x++ {
-			cell := tm.GetCell(x, y)
-			if cell != nil {
-				counts[cell.Terrain]++
-			}
-		}
-	}
-
 	fmt.Printf("Terrain distribution\n")
-	for _, terrain := range []simtypes.TerrainType{
-		simtypes.TerrainTypeWater,
-		simtypes.TerrainTypePlains,
-		simtypes.TerrainTypeForest,
-		simtypes.TerrainTypeMountain,
-	} {
+	for _, terrain := range terrainTypes() {
 		percent := 0.0
 		if total > 0 {
 			percent = float64(counts[terrain]) / float64(total) * 100
@@ -200,15 +178,9 @@ func printTerrainDistribution(tm simtypes.TerrainMap) {
 
 func printConnectedRegions(tm simtypes.TerrainMap) {
 	fmt.Printf("Connected regions\n")
-	for _, terrain := range []simtypes.TerrainType{
-		simtypes.TerrainTypeWater,
-		simtypes.TerrainTypePlains,
-		simtypes.TerrainTypeForest,
-		simtypes.TerrainTypeMountain,
-	} {
+	for _, terrain := range terrainTypes() {
 		regions := connectedRegionSizes(tm, terrain)
-		largest := 0
-		isolated := 0
+		largest, isolated := 0, 0
 		for _, size := range regions {
 			largest = maxInt(largest, size)
 			if size == 1 {
@@ -224,22 +196,27 @@ func printTerrainBoundaries(tm simtypes.TerrainMap) {
 	fmt.Printf("Terrain boundaries\n")
 	total := tm.Width * tm.Height
 
-	for _, terrain := range []simtypes.TerrainType{
-		simtypes.TerrainTypeWater,
-		simtypes.TerrainTypeMountain,
-	} {
-		boundaryCells := countBoundaryCells(tm, terrain)
+	for _, terrain := range []simtypes.TerrainType{simtypes.TerrainTypeWater, simtypes.TerrainTypeMountain} {
+		boundaryMask := makeBoundaryMask(tm, terrain)
+		boundaryCells := countMask(boundaryMask)
+		components := connectedMaskRegionSizes(boundaryMask, tm.Width, tm.Height)
+		largest := 0
+		for _, size := range components {
+			largest = maxInt(largest, size)
+		}
+
 		percent := 0.0
 		if total > 0 {
 			percent = float64(boundaryCells) / float64(total) * 100
 		}
-		fmt.Printf("  %-9s cells=%d (%5.1f%%)\n", terrain.String()+":", boundaryCells, percent)
+
+		fmt.Printf("  %-9s cells=%d (%5.1f%%) components=%d largest=%d\n", terrain.String()+":", boundaryCells, percent, len(components), largest)
 	}
 	fmt.Println()
 }
 
-func countBoundaryCells(tm simtypes.TerrainMap, target simtypes.TerrainType) int {
-	count := 0
+func makeBoundaryMask(tm simtypes.TerrainMap, target simtypes.TerrainType) []bool {
+	mask := make([]bool, tm.Width*tm.Height)
 
 	for y := 0; y < tm.Height; y++ {
 		for x := 0; x < tm.Width; x++ {
@@ -251,14 +228,67 @@ func countBoundaryCells(tm simtypes.TerrainMap, target simtypes.TerrainType) int
 			for _, neighbor := range orthogonalNeighbors(simtypes.Position{X: x, Y: y}) {
 				neighborCell := tm.GetCell(neighbor.X, neighbor.Y)
 				if neighborCell != nil && neighborCell.Terrain != target {
-					count++
+					mask[y*tm.Width+x] = true
 					break
 				}
 			}
 		}
 	}
 
+	return mask
+}
+
+func countMask(mask []bool) int {
+	count := 0
+	for _, value := range mask {
+		if value {
+			count++
+		}
+	}
 	return count
+}
+
+func connectedMaskRegionSizes(mask []bool, width, height int) []int {
+	visited := make([]bool, len(mask))
+	regions := make([]int, 0)
+
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			start := y*width + x
+			if visited[start] || !mask[start] {
+				visited[start] = true
+				continue
+			}
+
+			queue := []simtypes.Position{{X: x, Y: y}}
+			visited[start] = true
+			size := 0
+
+			for len(queue) > 0 {
+				current := queue[0]
+				queue = queue[1:]
+				size++
+
+				for _, neighbor := range orthogonalNeighbors(current) {
+					if neighbor.X < 0 || neighbor.X >= width || neighbor.Y < 0 || neighbor.Y >= height {
+						continue
+					}
+
+					index := neighbor.Y*width + neighbor.X
+					if visited[index] || !mask[index] {
+						continue
+					}
+
+					visited[index] = true
+					queue = append(queue, neighbor)
+				}
+			}
+
+			regions = append(regions, size)
+		}
+	}
+
+	return regions
 }
 
 func connectedRegionSizes(tm simtypes.TerrainMap, target simtypes.TerrainType) []int {
@@ -347,18 +377,34 @@ func printNeighborAgreement(tm simtypes.TerrainMap) {
 	}
 
 	fmt.Printf("Neighbor agreement\n")
-	for _, terrain := range []simtypes.TerrainType{
-		simtypes.TerrainTypeWater,
-		simtypes.TerrainTypePlains,
-		simtypes.TerrainTypeForest,
-		simtypes.TerrainTypeMountain,
-	} {
+	for _, terrain := range terrainTypes() {
 		stats := agreement[terrain]
 		percent := 0.0
 		if stats.total > 0 {
 			percent = float64(stats.same) / float64(stats.total) * 100
 		}
 		fmt.Printf("  %-9s %.1f%%\n", terrain.String()+":", percent)
+	}
+}
+
+func terrainCounts(tm simtypes.TerrainMap) map[simtypes.TerrainType]int {
+	counts := map[simtypes.TerrainType]int{}
+	for y := 0; y < tm.Height; y++ {
+		for x := 0; x < tm.Width; x++ {
+			if cell := tm.GetCell(x, y); cell != nil {
+				counts[cell.Terrain]++
+			}
+		}
+	}
+	return counts
+}
+
+func terrainTypes() []simtypes.TerrainType {
+	return []simtypes.TerrainType{
+		simtypes.TerrainTypeWater,
+		simtypes.TerrainTypePlains,
+		simtypes.TerrainTypeForest,
+		simtypes.TerrainTypeMountain,
 	}
 }
 
@@ -375,8 +421,7 @@ func layerFromTerrain(tm simtypes.TerrainMap, valueAt func(*simtypes.TerrainCell
 	layer := simtypes.NewLayer(tm.Width, tm.Height)
 	for y := 0; y < tm.Height; y++ {
 		for x := 0; x < tm.Width; x++ {
-			cell := tm.GetCell(x, y)
-			if cell != nil {
+			if cell := tm.GetCell(x, y); cell != nil {
 				layer.Set(x, y, valueAt(cell))
 			}
 		}
@@ -408,31 +453,18 @@ func generateTerrainMap(seed uint64) (*simtypes.TerrainMap, *simtypes.Layer, err
 	return tm, artifacts.Elevation, nil
 }
 
-func renderLayer(
-	tm simtypes.TerrainMap,
-	elevation *simtypes.Layer,
-	layer LayerType,
-	scale int,
-) (image.Image, error) {
+func renderLayer(tm simtypes.TerrainMap, elevation *simtypes.Layer, layer LayerType, scale int) (image.Image, error) {
 	switch layer {
 	case LayerTypeTerrain:
 		return renderTerrainMap(tm, scale), nil
 	case LayerTypeElevation:
-		return renderScalarLayer(tm.Width, tm.Height, scale, func(x, y int) float64 {
-			return elevation.Get(x, y)
-		}), nil
+		return renderScalarLayer(tm.Width, tm.Height, scale, func(x, y int) float64 { return elevation.Get(x, y) }), nil
 	case LayerTypeMoisture:
-		return renderScalarLayer(tm.Width, tm.Height, scale, func(x, y int) float64 {
-			return tm.GetCell(x, y).Moisture
-		}), nil
+		return renderScalarLayer(tm.Width, tm.Height, scale, func(x, y int) float64 { return tm.GetCell(x, y).Moisture }), nil
 	case LayerTypeFertility:
-		return renderScalarLayer(tm.Width, tm.Height, scale, func(x, y int) float64 {
-			return tm.GetCell(x, y).Fertility
-		}), nil
+		return renderScalarLayer(tm.Width, tm.Height, scale, func(x, y int) float64 { return tm.GetCell(x, y).Fertility }), nil
 	case LayerTypeFoodCapacity:
-		return renderScalarLayer(tm.Width, tm.Height, scale, func(x, y int) float64 {
-			return tm.GetCell(x, y).FoodCapacity
-		}), nil
+		return renderScalarLayer(tm.Width, tm.Height, scale, func(x, y int) float64 { return tm.GetCell(x, y).FoodCapacity }), nil
 	default:
 		return nil, fmt.Errorf("unsupported layer %q", layer)
 	}
@@ -440,24 +472,19 @@ func renderLayer(
 
 func renderTerrainMap(tm simtypes.TerrainMap, scale int) image.Image {
 	img := image.NewRGBA(image.Rect(0, 0, tm.Width*scale, tm.Height*scale))
-
 	for y := 0; y < tm.Height; y++ {
 		for x := 0; x < tm.Width; x++ {
-			cell := tm.GetCell(x, y)
-			if cell == nil {
-				continue
+			if cell := tm.GetCell(x, y); cell != nil {
+				fillCell(img, x, y, scale, terrainColor(cell.Terrain))
 			}
-			fillCell(img, x, y, scale, terrainColor(cell.Terrain))
 		}
 	}
-
 	return img
 }
 
 func renderScalarLayer(width, height, scale int, valueAt func(x, y int) float64) image.Image {
 	img := image.NewGray(image.Rect(0, 0, width*scale, height*scale))
 	minValue, maxValue := math.Inf(1), math.Inf(-1)
-
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			value := valueAt(x, y)
@@ -465,14 +492,12 @@ func renderScalarLayer(width, height, scale int, valueAt func(x, y int) float64)
 			maxValue = maxFloat(maxValue, value)
 		}
 	}
-
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			value := normalizeToRange(valueAt(x, y), minValue, maxValue)
 			fillCell(img, x, y, scale, color.Gray{Y: uint8(value * 255)})
 		}
 	}
-
 	return img
 }
 
@@ -503,7 +528,6 @@ func normalizeToRange(value, minValue, maxValue float64) float64 {
 	if maxValue <= minValue {
 		return 0.5
 	}
-
 	normalized := (value - minValue) / (maxValue - minValue)
 	if normalized < 0 {
 		return 0
@@ -512,6 +536,20 @@ func normalizeToRange(value, minValue, maxValue float64) float64 {
 		return 1
 	}
 	return normalized
+}
+
+func sanitizeOutputPath(raw string) (string, error) {
+	cleaned := filepath.Clean(raw)
+	if cleaned == "" || cleaned == "." {
+		return "", fmt.Errorf("output path is empty")
+	}
+	if filepath.IsAbs(cleaned) {
+		return "", fmt.Errorf("absolute output paths are not allowed")
+	}
+	if filepath.Ext(cleaned) != ".png" {
+		return "", fmt.Errorf("output file must use .png extension")
+	}
+	return cleaned, nil
 }
 
 func minFloat(a, b float64) float64 {
@@ -533,18 +571,4 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
-}
-
-func sanitizeOutputPath(raw string) (string, error) {
-	cleaned := filepath.Clean(raw)
-	if cleaned == "" || cleaned == "." {
-		return "", fmt.Errorf("output path is empty")
-	}
-	if filepath.IsAbs(cleaned) {
-		return "", fmt.Errorf("absolute output paths are not allowed")
-	}
-	if filepath.Ext(cleaned) != ".png" {
-		return "", fmt.Errorf("output file must use .png extension")
-	}
-	return cleaned, nil
 }
