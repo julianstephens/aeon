@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	WaterThreshold    = 0.35
+	WaterThreshold    = 0.25
 	MountainThreshold = 0.85
 	ForestMoisture    = 0.60
 

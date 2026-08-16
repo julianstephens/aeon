@@ -2,6 +2,7 @@ package layers
 
 import (
 	"math"
+	"sort"
 
 	"github.com/julianstephens/aeon/internal/simtypes"
 	"github.com/julianstephens/aeon/internal/simulation/rng"
@@ -162,17 +163,19 @@ func generateTerrainLayer(elevationLayer, moistureLayer *simtypes.Layer) *simtyp
 	terrainLayer := simtypes.NewLayer(elevationLayer.Width, elevationLayer.Height)
 	for x := 0; x < elevationLayer.Width; x++ {
 		for y := 0; y < elevationLayer.Height; y++ {
-			elevation := elevationLayer.Get(x, y)
-			moisture := moistureLayer.Get(x, y)
+			bottom25Percentile := bottomPercentile(elevationLayer, 25.0)
+			for _, pos := range bottom25Percentile {
+				terrainLayer.Set(pos.X, pos.Y, float64(simtypes.TerrainTypeWater))
+			}
 
-			if elevation < WaterThreshold {
-				terrainLayer.Set(x, y, float64(simtypes.TerrainTypeWater))
-			} else if elevation > MountainThreshold {
-				terrainLayer.Set(x, y, float64(simtypes.TerrainTypeMountain))
-			} else if moisture > ForestMoisture {
-				terrainLayer.Set(x, y, float64(simtypes.TerrainTypeForest))
-			} else {
-				terrainLayer.Set(x, y, float64(simtypes.TerrainTypePlains))
+			top8Percentile := topPercentile(elevationLayer, 8.0)
+			for _, pos := range top8Percentile {
+				terrainLayer.Set(pos.X, pos.Y, float64(simtypes.TerrainTypeMountain))
+			}
+
+			top30Percentile := topPercentile(moistureLayer, 30.0)
+			for _, pos := range top30Percentile {
+				terrainLayer.Set(pos.X, pos.Y, float64(simtypes.TerrainTypeForest))
 			}
 		}
 	}
@@ -213,4 +216,56 @@ func clamp(value float64) float64 {
 		return 1.0
 	}
 	return value
+}
+
+func topPercentile(layer *simtypes.Layer, percentile float64) []simtypes.Position {
+	if layer == nil || len(layer.Values) == 0 || percentile <= 0 {
+		return nil
+	}
+	if percentile > 100 {
+		percentile = 100
+	}
+
+	total := len(layer.Values)
+	target := max(int(math.Ceil((percentile/100.0)*float64(total))), 1)
+
+	sorted := append([]float64(nil), layer.Values...)
+	sort.Float64s(sorted)
+
+	cutoffIdx := max(total-target, 0)
+	threshold := sorted[cutoffIdx]
+
+	out := make([]simtypes.Position, 0, target)
+	for i, v := range layer.Values {
+		if v >= threshold {
+			out = append(out, simtypes.Position{X: i % layer.Width, Y: i / layer.Width})
+		}
+	}
+	return out
+}
+
+func bottomPercentile(layer *simtypes.Layer, percentile float64) []simtypes.Position {
+	if layer == nil || len(layer.Values) == 0 || percentile <= 0 {
+		return nil
+	}
+	if percentile > 100 {
+		percentile = 100
+	}
+
+	total := len(layer.Values)
+	target := max(int(math.Ceil((percentile/100.0)*float64(total))), 1)
+
+	sorted := append([]float64(nil), layer.Values...)
+	sort.Float64s(sorted)
+
+	cutoffIdx := min(target-1, total-1)
+	threshold := sorted[cutoffIdx]
+
+	out := make([]simtypes.Position, 0, target)
+	for i, v := range layer.Values {
+		if v <= threshold {
+			out = append(out, simtypes.Position{X: i % layer.Width, Y: i / layer.Width})
+		}
+	}
+	return out
 }

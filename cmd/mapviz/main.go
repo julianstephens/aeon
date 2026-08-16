@@ -275,7 +275,7 @@ func connectedRegionSizes(tm simtypes.TerrainMap, target simtypes.TerrainType) [
 
 func printNeighborAgreement(tm simtypes.TerrainMap) {
 	type counts struct {
-		same int
+		same  int
 		total int
 	}
 
@@ -493,3 +493,16 @@ func maxInt(a, b int) int {
 	return b
 }
 
+func sanitizeOutputPath(path string) (string, error) {
+	if filepath.IsAbs(path) {
+		return "", fmt.Errorf("output path must be relative")
+	}
+	if filepath.Ext(path) != ".png" {
+		return "", fmt.Errorf("output path must have .png extension")
+	}
+	cleaned := filepath.Clean(path)
+	if cleaned == "." || cleaned == ".." || cleaned == "" {
+		return "", fmt.Errorf("invalid output path")
+	}
+	return cleaned, nil
+}
