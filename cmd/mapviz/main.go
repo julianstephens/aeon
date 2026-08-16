@@ -9,14 +9,11 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 
+	"github.com/alecthomas/kong"
 	"github.com/julianstephens/aeon/internal/simtypes"
 	"github.com/julianstephens/aeon/internal/simulation/layers"
 	"github.com/julianstephens/aeon/internal/simulation/rng"
-	"github.com/julianstephens/go-utils/cliutil"
-	"github.com/julianstephens/go-utils/logger"
 )
 
 type LayerType string
@@ -29,113 +26,74 @@ const (
 	LayerTypeFoodCapacity LayerType = "food-capacity"
 )
 
-const defaultScale = 8
+type CLI struct {
+	Seed      uint64    `help:"Terrain generation seed." default:"42"`
+	Layer     LayerType `help:"Layer to render." enum:"terrain,elevation,moisture,fertility,food-capacity" default:"elevation"`
+	Scale     int       `help:"Scale factor for each map cell." default:"8"`
+	Output    string    `help:"Output PNG path." default:"terrain.png"`
+}
 
 func main() {
-	args := cliutil.ParseArgs(os.Args[1:])
-	configureLogLevel(args)
+	var cli CLI
+	ctx := kong.Parse(&cli,
+		kong.Name("mapviz"),
+		kong.Description("Generate PNG visualizations of Aeon terrain layers."),
+	)
+	ctx.FatalIfError2()
 
-	seedStr := args.GetFlagWithDefault("seed", "42")
-	seed, err := strconv.ParseUint(seedStr, 10, 64)
-	if err != nil {
-		logger.Fatalf("invalid seed: %v", err)
+	if cli.Scale < 1 {
+		ctx.Fatalf("scale must be at least 1")
 	}
 
-	layerName := args.GetFlagWithDefault("layer", string(LayerTypeElevation))
-
-	scaleStr := args.GetFlagWithDefault("scale", strconv.Itoa(defaultScale))
-	scale, err := strconv.Atoi(scaleStr)
+	outputPath, err := sanitizeOutputPath(cli.Output)
 	if err != nil {
-		logger.Fatalf("invalid scale: %v", err)
+		ctx.Fatalf("invalid output path: %v", err)
 	}
 
-	output := args.GetFlagWithDefault("output", "terrain.png")
-	outputPath, err := sanitizeOutputPath(output)
+	tm, elevation, err := generateTerrainMap(cli.Seed)
 	if err != nil {
-		logger.Fatalf("invalid output path: %v", err)
+		ctx.Fatalf("failed to generate terrain map: %v", err)
 	}
 
-	if scale < 1 {
-		logger.Fatal("scale must be at least 1")
-	}
-
-	logger.WithFields(map[string]interface{}{
-		"seed":   seed,
-		"layer":  layerName,
-		"scale":  scale,
-		"output": outputPath,
-	}).Info("generating map visualization")
-
-	tm, elevation, err := generateTerrainMap(seed)
+	img, err := renderLayer(*tm, elevation, cli.Layer, cli.Scale)
 	if err != nil {
-		logger.Fatalf("failed to generate terrain map: %v", err)
-	}
-
-	img, err := renderLayer(*tm, elevation, LayerType(layerName), scale)
-	if err != nil {
-		logger.Fatal(err)
+		ctx.Fatalf("failed to render layer: %v", err)
 	}
 
 	outputDir := filepath.Dir(outputPath)
 	if outputDir != "." {
-		// #nosec G703 -- outputDir is derived from sanitizeOutputPath-validated relative outputPath.
 		if err := os.MkdirAll(outputDir, 0o750); err != nil {
-			logger.Fatalf("failed to create output directory: %v", err)
+			ctx.Fatalf("failed to create output directory: %v", err)
 		}
 	}
 
-	// #nosec G304 G703 -- outputPath is sanitized by sanitizeOutputPath and restricted to a relative .png path.
-	file, err := os.Create(outputPath)
+	file, err := os.Create(outputPath) // #nosec G304 -- outputPath is restricted to relative .png paths.
 	if err != nil {
-		logger.Fatal(err)
+		ctx.Fatalf("failed to create output file: %v", err)
 	}
 	defer func() {
-		if err := file.Close(); err != nil {
-			logger.Errorf("failed to close output file: %v", err)
-		}
+		_ = file.Close()
 	}()
 
 	if err := png.Encode(file, img); err != nil {
-		logger.Fatal(err)
+		ctx.Fatalf("failed to encode PNG: %v", err)
 	}
 
-	logger.Infof("wrote %s", outputPath)
+	fmt.Printf("wrote %s\n", outputPath)
 }
 
 func sanitizeOutputPath(raw string) (string, error) {
-	cleaned := filepath.Clean(strings.TrimSpace(raw))
+	cleaned := filepath.Clean(raw)
 	if cleaned == "" || cleaned == "." {
 		return "", fmt.Errorf("output path is empty")
 	}
 	if filepath.IsAbs(cleaned) {
 		return "", fmt.Errorf("absolute output paths are not allowed")
 	}
-
-	ext := strings.ToLower(filepath.Ext(cleaned))
-	if ext == "" {
-		cleaned += ".png"
-		ext = ".png"
-	}
-	if ext != ".png" {
+	if ext := filepath.Ext(cleaned); ext != ".png" {
 		return "", fmt.Errorf("output file must use .png extension")
 	}
-
 	return cleaned, nil
-}
-
-func configureLogLevel(args *cliutil.Args) {
-	level := args.GetFlag("log-level")
-	if level == "" {
-		level = os.Getenv("AEON_LOG_LEVEL")
-	}
-	if level == "" {
-		level = "info"
-	}
-
-	if err := logger.SetLogLevel(level); err != nil {
-		logger.Warnf("invalid log level %q, falling back to info", level)
-		_ = logger.SetLogLevel("info")
-	}
 }
 
 func generateTerrainMap(seed uint64) (*simtypes.TerrainMap, *simtypes.Layer, error) {
@@ -148,8 +106,7 @@ func generateTerrainMap(seed uint64) (*simtypes.TerrainMap, *simtypes.Layer, err
 		return nil, nil, err
 	}
 
-	// Pipeline classifies terrain types; generate and apply scalar layers for visualization.
-	generator := layers.NewGenerator(max(tm.Width, tm.Height), max(tm.Width, tm.Height), random)
+	generator := layers.NewGenerator(tm.Width, tm.Height, random)
 	artifacts, err := generator.GenerateLayers(seedBytes, tm)
 	if err != nil {
 		return nil, nil, err
@@ -158,27 +115,9 @@ func generateTerrainMap(seed uint64) (*simtypes.TerrainMap, *simtypes.Layer, err
 	tm.ApplyElevation(artifacts.Elevation)
 	tm.ApplyMoisture(artifacts.Moisture)
 	tm.ApplyFertility(artifacts.Fertility)
-	tm.SetInitialized(true)
+	tm.ApplyTerrain(artifacts.Terrain)
 
-	elevation := elevationLayerFromTerrain(*tm)
-
-	return tm, elevation, nil
-}
-
-func elevationLayerFromTerrain(tm simtypes.TerrainMap) *simtypes.Layer {
-	layer := simtypes.NewLayer(tm.Width, tm.Height)
-
-	for y := 0; y < tm.Height; y++ {
-		for x := 0; x < tm.Width; x++ {
-			cell := tm.GetCell(x, y)
-			if cell == nil {
-				continue
-			}
-			layer.Set(x, y, cell.Elevation)
-		}
-	}
-
-	return layer
+	return tm, artifacts.Elevation, nil
 }
 
 func renderLayer(
@@ -191,39 +130,28 @@ func renderLayer(
 	case LayerTypeTerrain:
 		return renderTerrainMap(tm, scale), nil
 	case LayerTypeElevation:
-		return renderElevationMap(*elevation, tm.Width, tm.Height, scale), nil
+		return renderScalarLayer(tm.Width, tm.Height, scale, func(x, y int) float64 {
+			return elevation.Get(x, y)
+		}), nil
 	case LayerTypeMoisture:
 		return renderScalarLayer(tm.Width, tm.Height, scale, func(x, y int) float64 {
-			cell := tm.GetCell(x, y)
-			return cell.Moisture
+			return tm.GetCell(x, y).Moisture
 		}), nil
 	case LayerTypeFertility:
 		return renderScalarLayer(tm.Width, tm.Height, scale, func(x, y int) float64 {
-			cell := tm.GetCell(x, y)
-			return cell.Fertility
+			return tm.GetCell(x, y).Fertility
 		}), nil
 	case LayerTypeFoodCapacity:
 		return renderScalarLayer(tm.Width, tm.Height, scale, func(x, y int) float64 {
-			cell := tm.GetCell(x, y)
-			return cell.FoodCapacity
+			return tm.GetCell(x, y).FoodCapacity
 		}), nil
 	default:
-		return nil, fmt.Errorf(
-			"unknown layer %q; valid layers: %s, %s, %s, %s, %s",
-			layer,
-			LayerTypeTerrain,
-			LayerTypeElevation,
-			LayerTypeMoisture,
-			LayerTypeFertility,
-			LayerTypeFoodCapacity,
-		)
+		return nil, fmt.Errorf("unsupported layer %q", layer)
 	}
 }
 
 func renderTerrainMap(tm simtypes.TerrainMap, scale int) image.Image {
-	width := tm.Width * scale
-	height := tm.Height * scale
-	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	img := image.NewRGBA(image.Rect(0, 0, tm.Width*scale, tm.Height*scale))
 
 	for y := 0; y < tm.Height; y++ {
 		for x := 0; x < tm.Width; x++ {
@@ -231,42 +159,7 @@ func renderTerrainMap(tm simtypes.TerrainMap, scale int) image.Image {
 			if cell == nil {
 				continue
 			}
-
 			fillCell(img, x, y, scale, terrainColor(cell.Terrain))
-		}
-	}
-
-	return img
-}
-
-func renderElevationMap(em simtypes.Layer, width, height, scale int) image.Image {
-	img := image.NewGray(image.Rect(0, 0, width*scale, height*scale))
-	minValue, maxValue := math.Inf(1), math.Inf(-1)
-
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			if x >= em.Width || y >= em.Height {
-				continue
-			}
-
-			v := em.Get(x, y)
-			if v < minValue {
-				minValue = v
-			}
-			if v > maxValue {
-				maxValue = v
-			}
-		}
-	}
-
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			if x >= em.Width || y >= em.Height {
-				continue
-			}
-
-			value := normalizeToRange(em.Get(x, y), minValue, maxValue)
-			fillCell(img, x, y, scale, color.Gray{Y: uint8(value * 255)})
 		}
 	}
 
@@ -279,13 +172,9 @@ func renderScalarLayer(width, height, scale int, valueAt func(x, y int) float64)
 
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
-			v := valueAt(x, y)
-			if v < minValue {
-				minValue = v
-			}
-			if v > maxValue {
-				maxValue = v
-			}
+			value := valueAt(x, y)
+			minValue = minFloat(minValue, value)
+			maxValue = maxFloat(maxValue, value)
 		}
 	}
 
@@ -328,18 +217,23 @@ func normalizeToRange(value, minValue, maxValue float64) float64 {
 	}
 
 	normalized := (value - minValue) / (maxValue - minValue)
-
-	switch {
-	case normalized < 0:
+	if normalized < 0 {
 		return 0
-	case normalized > 1:
-		return 1
-	default:
-		return normalized
 	}
+	if normalized > 1 {
+		return 1
+	}
+	return normalized
 }
 
-func max(a, b int) int {
+func minFloat(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxFloat(a, b float64) float64 {
 	if a > b {
 		return a
 	}
