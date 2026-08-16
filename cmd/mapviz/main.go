@@ -27,10 +27,10 @@ const (
 )
 
 type CLI struct {
-	Seed      uint64    `help:"Terrain generation seed." default:"42"`
-	Layer     LayerType `help:"Layer to render." enum:"terrain,elevation,moisture,fertility,food-capacity" default:"elevation"`
-	Scale     int       `help:"Scale factor for each map cell." default:"8"`
-	Output    string    `help:"Output PNG path." default:"terrain.png"`
+	Seed   uint64    `help:"Terrain generation seed." default:"42"`
+	Layer  LayerType `help:"Layer to render." enum:"terrain,elevation,moisture,fertility,food-capacity" default:"elevation"`
+	Scale  int       `help:"Scale factor for each map cell." default:"8"`
+	Output string    `help:"Output PNG path." default:"terrain.png"`
 }
 
 func main() {
@@ -38,8 +38,10 @@ func main() {
 	ctx := kong.Parse(&cli,
 		kong.Name("mapviz"),
 		kong.Description("Generate PNG visualizations of Aeon terrain layers."),
+		kong.ConfigureHelp(kong.HelpOptions{
+			Compact: true,
+		}),
 	)
-	ctx.FatalIfError2()
 
 	if cli.Scale < 1 {
 		ctx.Fatalf("scale must be at least 1")
