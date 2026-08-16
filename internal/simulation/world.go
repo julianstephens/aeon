@@ -19,12 +19,13 @@ type Settlement struct {
 }
 
 type World struct {
-	seed             [32]byte
-	random           *rng.RNG
-	terrainGenerator *layers.Generator
+	seed   [32]byte
+	random *rng.RNG
 
-	CurrentYear      int
-	terrainMap       simtypes.TerrainMap
+	terrainMap    *simtypes.TerrainMap
+	layerPipeline *layers.Pipeline
+
+	currentYear      int
 	agents           []*Agent
 	settlements      []Settlement
 	historicalEvents []string
@@ -37,15 +38,13 @@ func NewWorld(seed string) (*World, error) {
 		"height": simtypes.DefaultMapHeight,
 	}).Debug("creating new world")
 
-	terrainMap := simtypes.NewTerrainMap(simtypes.DefaultMapWidth, simtypes.DefaultMapHeight)
 	seedHash := sha256.Sum256([]byte(seed))
 	random := rng.NewRNG(seedHash)
 	world := &World{
 		seed:             seedHash,
 		random:           random,
-		CurrentYear:      0,
-		terrainMap:       terrainMap,
-		terrainGenerator: layers.NewGenerator(simtypes.DefaultMapWidth, simtypes.DefaultMapHeight, random),
+		currentYear:      0,
+		terrainMap:       nil,
 		agents:           []*Agent{},
 		settlements:      []Settlement{},
 		historicalEvents: []string{},
@@ -56,7 +55,7 @@ func NewWorld(seed string) (*World, error) {
 	}
 
 	logger.WithFields(map[string]interface{}{
-		"current_year": world.CurrentYear,
+		"current_year": world.currentYear,
 		"population":   world.PopulationCount(),
 	}).Debug("world created")
 	return world, nil
@@ -64,9 +63,11 @@ func NewWorld(seed string) (*World, error) {
 
 func (w *World) initialize() error {
 	logger.Debug("initializing world terrain map")
-	if err := generateTerrainMap(w); err != nil {
+	tm, err := w.layerPipeline.Run(w.seed)
+	if err != nil || tm == nil {
 		return &SimulationError{Code: CodeWorldError, Message: "Failed to generate terrain map", Cause: err}
 	}
+	w.terrainMap = tm
 	logger.Debug("terrain map initialized")
 
 	logger.WithField("initial_agents", 100).Debug("generating initial population")
@@ -97,9 +98,13 @@ func (w *World) PopulationCount() int {
 	return len(w.agents)
 }
 
+func (w *World) Year() int {
+	return w.currentYear
+}
+
 func (w *World) PrintSummary(c *cliutil.Console) {
 	_ = c.Info(fmt.Sprintf("World: %x", w.seed))
-	_ = c.PrintColored(fmt.Sprintf("Year: %d", w.CurrentYear), cliutil.ColorWhite)
+	_ = c.PrintColored(fmt.Sprintf("Year: %d", w.currentYear), cliutil.ColorWhite)
 	_ = c.PrintColored(fmt.Sprintf("Population: %d", w.PopulationCount()), cliutil.ColorWhite)
 }
 
@@ -121,11 +126,6 @@ func (w *World) PrintPopulationDetails() {
 		})
 	}
 	cliutil.PrintTable(table)
-}
-
-func generateTerrainMap(w *World) (err error) {
-	err = w.terrainGenerator.GenerateTerrainMap(w.seed, &w.terrainMap)
-	return
 }
 
 func generateInitialPopulation(w *World, numAgents int) (err error) {

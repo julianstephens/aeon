@@ -129,11 +129,17 @@ func generateTerrainMap(t *testing.T, worldSeed [32]byte) simtypes.TerrainMap {
 	tm := simtypes.NewTerrainMap(simtypes.DefaultMapWidth, simtypes.DefaultMapHeight)
 	generator := layers.NewGenerator(tm.Width, tm.Height, rng.NewRNG(worldSeed))
 
-	if err := generator.GenerateTerrainMap(worldSeed, &tm); err != nil {
-		t.Fatalf("GenerateTerrainMap returned error: %v", err)
+	artifacts, err := generator.GenerateLayers(worldSeed, tm)
+	if err != nil {
+		t.Fatalf("GenerateLayers returned error: %v", err)
 	}
 
-	return tm
+	tm.ApplyElevation(artifacts.Elevation)
+	tm.ApplyMoisture(artifacts.Moisture)
+	tm.ApplyFertility(artifacts.Fertility)
+	tm.SetInitialized(true)
+
+	return *tm
 }
 
 func extractLayer(tm simtypes.TerrainMap, project func(c simtypes.TerrainCell) float64) []float64 {

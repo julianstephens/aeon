@@ -71,7 +71,7 @@ func main() {
 		logger.Fatalf("failed to generate terrain map: %v", err)
 	}
 
-	img, err := renderLayer(tm, elevation, LayerType(layerName), scale)
+	img, err := renderLayer(*tm, elevation, LayerType(layerName), scale)
 	if err != nil {
 		logger.Fatal(err)
 	}
@@ -138,27 +138,35 @@ func configureLogLevel(args *cliutil.Args) {
 	}
 }
 
-func generateTerrainMap(seed uint64) (simtypes.TerrainMap, *simtypes.LayerMap, error) {
+func generateTerrainMap(seed uint64) (*simtypes.TerrainMap, *simtypes.Layer, error) {
 	seedBytes := sha256.Sum256(fmt.Appendf(nil, "%d", seed))
 	random := rng.NewRNG(seedBytes)
 
-	tm := simtypes.NewTerrainMap(
-		simtypes.DefaultMapWidth,
-		simtypes.DefaultMapHeight,
-	)
-
-	generator := layers.NewGenerator(max(tm.Width, tm.Height), max(tm.Width, tm.Height), random)
-	if err := generator.GenerateTerrainMap(seedBytes, &tm); err != nil {
-		return simtypes.TerrainMap{}, nil, err
+	pipeline := layers.NewPipeline(simtypes.DefaultMapWidth, simtypes.DefaultMapHeight, random)
+	tm, err := pipeline.Run(seedBytes)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	elevation := elevationLayerFromTerrain(tm)
+	// Pipeline classifies terrain types; generate and apply scalar layers for visualization.
+	generator := layers.NewGenerator(max(tm.Width, tm.Height), max(tm.Width, tm.Height), random)
+	artifacts, err := generator.GenerateLayers(seedBytes, tm)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	tm.ApplyElevation(artifacts.Elevation)
+	tm.ApplyMoisture(artifacts.Moisture)
+	tm.ApplyFertility(artifacts.Fertility)
+	tm.SetInitialized(true)
+
+	elevation := elevationLayerFromTerrain(*tm)
 
 	return tm, elevation, nil
 }
 
-func elevationLayerFromTerrain(tm simtypes.TerrainMap) *simtypes.LayerMap {
-	layer := simtypes.NewLayerMap(tm.Width, tm.Height)
+func elevationLayerFromTerrain(tm simtypes.TerrainMap) *simtypes.Layer {
+	layer := simtypes.NewLayer(tm.Width, tm.Height)
 
 	for y := 0; y < tm.Height; y++ {
 		for x := 0; x < tm.Width; x++ {
@@ -175,7 +183,7 @@ func elevationLayerFromTerrain(tm simtypes.TerrainMap) *simtypes.LayerMap {
 
 func renderLayer(
 	tm simtypes.TerrainMap,
-	elevation *simtypes.LayerMap,
+	elevation *simtypes.Layer,
 	layer LayerType,
 	scale int,
 ) (image.Image, error) {
@@ -231,7 +239,7 @@ func renderTerrainMap(tm simtypes.TerrainMap, scale int) image.Image {
 	return img
 }
 
-func renderElevationMap(em simtypes.LayerMap, width, height, scale int) image.Image {
+func renderElevationMap(em simtypes.Layer, width, height, scale int) image.Image {
 	img := image.NewGray(image.Rect(0, 0, width*scale, height*scale))
 	minValue, maxValue := math.Inf(1), math.Inf(-1)
 

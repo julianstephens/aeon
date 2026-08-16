@@ -72,7 +72,7 @@ func TestDSGenerator_Generate_ProducesVariation(t *testing.T) {
 
 func TestDSGenerator_InitializeCorners_SetsCornersInUnitInterval(t *testing.T) {
 	ds := NewDSGenerator(9, rng.NewRNG(testSeed()))
-	em := simtypes.NewLayerMap(9, 9)
+	em := simtypes.NewLayer(9, 9)
 
 	ds.initializeCorners(em)
 
@@ -84,7 +84,7 @@ func TestDSGenerator_InitializeCorners_SetsCornersInUnitInterval(t *testing.T) {
 
 func TestDSGenerator_GetAverage_IgnoresOutOfBoundsNeighbors(t *testing.T) {
 	ds := NewDSGenerator(3, rng.NewRNG(testSeed()))
-	em := simtypes.NewLayerMap(3, 3)
+	em := simtypes.NewLayer(3, 3)
 
 	em.Set(0, 1, 0.2)
 	em.Set(1, 0, 0.4)

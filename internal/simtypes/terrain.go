@@ -1,5 +1,7 @@
 package simtypes
 
+import "errors"
+
 const (
 	DefaultMapWidth  = 65
 	DefaultMapHeight = 65
@@ -11,25 +13,25 @@ type Position struct {
 	X, Y int
 }
 
-type LayerMap struct {
+type Layer struct {
 	Width  int
 	Height int
 	Values []float64
 }
 
-func NewLayerMap(width, height int) *LayerMap {
-	return &LayerMap{
+func NewLayer(width, height int) *Layer {
+	return &Layer{
 		Width:  width,
 		Height: height,
 		Values: make([]float64, width*height),
 	}
 }
 
-func (em *LayerMap) Get(x, y int) float64 {
+func (em *Layer) Get(x, y int) float64 {
 	return em.Values[y*em.Width+x]
 }
 
-func (em *LayerMap) Set(x, y int, value float64) {
+func (em *Layer) Set(x, y int, value float64) {
 	em.Values[y*em.Width+x] = value
 }
 
@@ -93,8 +95,8 @@ type TerrainMap struct {
 	Cells       []TerrainCell
 }
 
-func NewTerrainMap(width, height int) TerrainMap {
-	return TerrainMap{
+func NewTerrainMap(width, height int) *TerrainMap {
+	return &TerrainMap{
 		initialized: false,
 		Width:       width,
 		Height:      height,
@@ -114,6 +116,17 @@ func (tm *TerrainMap) SetCell(x, y int, cell TerrainCell) {
 		return
 	}
 	tm.Cells[y*tm.Width+x] = cell
+	tm.initialized = true
+}
+
+func (tm *TerrainMap) SetTerrainType(x, y int, terrainType TerrainType) error {
+	cell := tm.GetCell(x, y)
+	if cell != nil {
+		cell.Terrain = terrainType
+		tm.SetCell(x, y, *cell)
+		return nil
+	}
+	return errors.New("invalid coordinates for terrain map")
 }
 
 func (tm *TerrainMap) IsInitialized() bool {
@@ -124,8 +137,8 @@ func (tm *TerrainMap) SetInitialized(initialized bool) {
 	tm.initialized = initialized
 }
 
-// ApplyElevation applies the given LayerMap to the TerrainMap, updating the Elevation field of each TerrainCell.
-func (tm *TerrainMap) ApplyElevation(layer *LayerMap) {
+// ApplyElevation applies the given Layer to the TerrainMap, updating the Elevation field of each TerrainCell.
+func (tm *TerrainMap) ApplyElevation(layer *Layer) {
 	for x := 0; x < tm.Width; x++ {
 		for y := 0; y < tm.Height; y++ {
 			elevation := layer.Get(x, y)
@@ -136,7 +149,7 @@ func (tm *TerrainMap) ApplyElevation(layer *LayerMap) {
 	}
 }
 
-func (tm *TerrainMap) ApplyMoisture(layer *LayerMap) {
+func (tm *TerrainMap) ApplyMoisture(layer *Layer) {
 	for x := 0; x < tm.Width; x++ {
 		for y := 0; y < tm.Height; y++ {
 			moisture := layer.Get(x, y)
@@ -146,7 +159,7 @@ func (tm *TerrainMap) ApplyMoisture(layer *LayerMap) {
 		}
 	}
 }
-func (tm *TerrainMap) ApplyFertility(layer *LayerMap) {
+func (tm *TerrainMap) ApplyFertility(layer *Layer) {
 	for x := 0; x < tm.Width; x++ {
 		for y := 0; y < tm.Height; y++ {
 			fertility := layer.Get(x, y)
@@ -157,7 +170,7 @@ func (tm *TerrainMap) ApplyFertility(layer *LayerMap) {
 	}
 }
 
-func (tm *TerrainMap) ApplyTerrain(layer *LayerMap) {
+func (tm *TerrainMap) ApplyTerrain(layer *Layer) {
 	for x := 0; x < tm.Width; x++ {
 		for y := 0; y < tm.Height; y++ {
 			terrainValue := layer.Get(x, y)

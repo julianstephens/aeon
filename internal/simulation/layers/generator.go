@@ -13,28 +13,18 @@ const (
 	moistureWeight         = 0.45
 	elevationPenaltyWeight = 0.40
 	variationAmplitude     = 0.12
-
-	WaterThreshold    = 0.35
-	MountainThreshold = 0.85
-	ForestMoisture    = 0.60
-
-	WaterTarget    = 0.35
-	PlainsTarget   = 0.35
-	ForestTarget   = 0.22
-	MountainTarget = 0.08
-
-	MinWaterRegionSize = 8
-
-	MinSettlementDistance = 12
-
-	PlainsFoodCapacity   = 100.0
-	ForestFoodCapacity   = 75.0
-	MountainFoodCapacity = 15.0
 )
 
 type Generator struct {
 	width, height int
 	random        *rng.RNG
+}
+
+type LayerArtifacts struct {
+	Elevation *simtypes.Layer
+	Moisture  *simtypes.Layer
+	Fertility *simtypes.Layer
+	Terrain   *simtypes.Layer
 }
 
 func NewGenerator(width, height int, randomSource *rng.RNG) *Generator {
@@ -45,7 +35,7 @@ func NewGenerator(width, height int, randomSource *rng.RNG) *Generator {
 	}
 }
 
-func (g *Generator) GenerateTerrainMap(worldSeed [32]byte, tm *simtypes.TerrainMap) error {
+func (g *Generator) GenerateLayers(worldSeed [32]byte, tm *simtypes.TerrainMap) (LayerArtifacts, error) {
 	// generate elevation layer using Diamond-Square algorithm
 	logger.WithFields(map[string]interface{}{
 		"width":  g.width,
@@ -68,6 +58,7 @@ func (g *Generator) GenerateTerrainMap(worldSeed [32]byte, tm *simtypes.TerrainM
 		"height": moistureLayer.Height,
 	}).Debug("moisture layer generated")
 
+	// generate fertility layer from elevation and moisture layers
 	logger.WithFields(map[string]interface{}{
 		"width":  g.width,
 		"height": g.height,
@@ -78,46 +69,26 @@ func (g *Generator) GenerateTerrainMap(worldSeed [32]byte, tm *simtypes.TerrainM
 		"height": fertilityLayer.Height,
 	}).Debug("fertility layer generated")
 
+	// generate terrain layer from elevation and moisture layers
 	logger.WithFields(map[string]interface{}{
 		"width":  g.width,
 		"height": g.height,
 	}).Debug("generating terrain layer")
-	terrainLayer := generateTerrainLayer(elevationLayer, moistureLayer, fertilityLayer)
+	terrainLayer := generateTerrainLayer(elevationLayer, moistureLayer)
 	logger.WithFields(map[string]interface{}{
 		"width":  terrainLayer.Width,
 		"height": terrainLayer.Height,
 	}).Debug("terrain layer generated")
 
-	logger.WithFields(map[string]interface{}{
-		"width":  g.width,
-		"height": g.height,
-	}).Debug("applying elevation layer to terrain map")
-	tm.ApplyElevation(elevationLayer)
-	logger.Debug("elevation layer applied to terrain map")
-	logger.WithFields(map[string]interface{}{
-		"width":  g.width,
-		"height": g.height,
-	}).Debug("applying moisture layer to terrain map")
-	tm.ApplyMoisture(moistureLayer)
-	logger.Debug("moisture layer applied to terrain map")
-	logger.WithFields(map[string]interface{}{
-		"width":  g.width,
-		"height": g.height,
-	}).Debug("applying fertility layer to terrain map")
-	tm.ApplyFertility(fertilityLayer)
-	logger.Debug("fertility layer applied to terrain map")
-	logger.WithFields(map[string]interface{}{
-		"width":  g.width,
-		"height": g.height,
-	}).Debug("applying terrain layer to terrain map")
-	tm.ApplyTerrain(terrainLayer)
-	logger.Debug("terrain layer applied to terrain map")
-
-	tm.SetInitialized(true)
-	return nil
+	return LayerArtifacts{
+		Elevation: elevationLayer,
+		Moisture:  moistureLayer,
+		Fertility: fertilityLayer,
+		Terrain:   terrainLayer,
+	}, nil
 }
 
-func generateElevationLayer(g *Generator, worldSeed [32]byte) *simtypes.LayerMap {
+func generateElevationLayer(g *Generator, worldSeed [32]byte) *simtypes.Layer {
 	logger.WithFields(map[string]interface{}{
 		"width":  g.width,
 		"height": g.height,
@@ -136,7 +107,7 @@ func generateElevationLayer(g *Generator, worldSeed [32]byte) *simtypes.LayerMap
 	return elevationLayer
 }
 
-func generateMoistureLayer(g *Generator, worldSeed [32]byte) *simtypes.LayerMap {
+func generateMoistureLayer(g *Generator, worldSeed [32]byte) *simtypes.Layer {
 	logger.WithFields(map[string]interface{}{
 		"width":  g.width,
 		"height": g.height,
@@ -158,21 +129,21 @@ func generateMoistureLayer(g *Generator, worldSeed [32]byte) *simtypes.LayerMap 
 func generateFertilityLayer(
 	g *Generator,
 	worldSeed [32]byte,
-	elevationMap *simtypes.LayerMap,
-	moistureMap *simtypes.LayerMap,
-) *simtypes.LayerMap {
-	fertilityMap := simtypes.NewLayerMap(g.width, g.height)
+	elevationLayer *simtypes.Layer,
+	moistureLayer *simtypes.Layer,
+) *simtypes.Layer {
+	fertilityLayer := simtypes.NewLayer(g.width, g.height)
 
-	elevationMin, elevationMax := minMax(elevationMap)
-	moistureMin, moistureMax := minMax(moistureMap)
+	elevationMin, elevationMax := minMax(elevationLayer)
+	moistureMin, moistureMax := minMax(moistureLayer)
 
 	noiseSeed := rng.DeriveSeed(worldSeed, "fertility")
 	noiseRNG := rng.NewRNG(noiseSeed)
 
 	for x := 0; x < g.width; x++ {
 		for y := 0; y < g.height; y++ {
-			elevation := normalize(elevationMap.Get(x, y), elevationMin, elevationMax)
-			moisture := normalize(moistureMap.Get(x, y), moistureMin, moistureMax)
+			elevation := normalize(elevationLayer.Get(x, y), elevationMin, elevationMax)
+			moisture := normalize(moistureLayer.Get(x, y), moistureMin, moistureMax)
 
 			extremeElevation := 2.0 * math.Abs(elevation-0.5) // [0, 1]
 			penalty := extremeElevation * extremeElevation * elevationPenaltyWeight
@@ -181,19 +152,18 @@ func generateFertilityLayer(
 			variation := noise * variationAmplitude
 
 			fertility := baseFertility + (moisture * moistureWeight) - penalty + variation
-			fertilityMap.Set(x, y, clamp(fertility))
+			fertilityLayer.Set(x, y, clamp(fertility))
 		}
 	}
-	return fertilityMap
+	return fertilityLayer
 }
 
-func generateTerrainLayer(elevationMap, moistureMap, _fertilityMap *simtypes.LayerMap) *simtypes.LayerMap {
-	terrainLayer := simtypes.NewLayerMap(elevationMap.Width, elevationMap.Height)
-
-	for x := 0; x < elevationMap.Width; x++ {
-		for y := 0; y < elevationMap.Height; y++ {
-			elevation := elevationMap.Get(x, y)
-			moisture := moistureMap.Get(x, y)
+func generateTerrainLayer(elevationLayer, moistureLayer *simtypes.Layer) *simtypes.Layer {
+	terrainLayer := simtypes.NewLayer(elevationLayer.Width, elevationLayer.Height)
+	for x := 0; x < elevationLayer.Width; x++ {
+		for y := 0; y < elevationLayer.Height; y++ {
+			elevation := elevationLayer.Get(x, y)
+			moisture := moistureLayer.Get(x, y)
 
 			if elevation < WaterThreshold {
 				terrainLayer.Set(x, y, float64(simtypes.TerrainTypeWater))
@@ -206,11 +176,10 @@ func generateTerrainLayer(elevationMap, moistureMap, _fertilityMap *simtypes.Lay
 			}
 		}
 	}
-
 	return terrainLayer
 }
 
-func minMax(layer *simtypes.LayerMap) (float64, float64) {
+func minMax(layer *simtypes.Layer) (float64, float64) {
 	min := layer.Get(0, 0)
 	max := layer.Get(0, 0)
 

@@ -20,7 +20,7 @@ func Run(c *cliutil.Console, seed string, years int) error {
 	}
 
 	logger.WithFields(map[string]interface{}{
-		"year":       w.CurrentYear,
+		"year":       w.currentYear,
 		"population": w.PopulationCount(),
 	}).Debug("world initialized")
 	w.PrintSummary(c)
