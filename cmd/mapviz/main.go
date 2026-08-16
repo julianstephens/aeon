@@ -27,6 +27,15 @@ const (
 )
 
 type CLI struct {
+	Analyze AnalyzeCommand `cmd:"" help:"Analyze generated terrain layers."`
+	Render  RenderCommand  `cmd:"" help:"Render a generated terrain layer to PNG."`
+}
+
+type AnalyzeCommand struct {
+	Seed uint64 `help:"Terrain generation seed." default:"42"`
+}
+
+type RenderCommand struct {
 	Seed   uint64    `help:"Terrain generation seed." default:"42"`
 	Layer  LayerType `help:"Layer to render." enum:"terrain,elevation,moisture,fertility,food-capacity" default:"elevation"`
 	Scale  int       `help:"Scale factor for each map cell." default:"8"`
@@ -37,65 +46,300 @@ func main() {
 	var cli CLI
 	ctx := kong.Parse(&cli,
 		kong.Name("mapviz"),
-		kong.Description("Generate PNG visualizations of Aeon terrain layers."),
-		kong.ConfigureHelp(kong.HelpOptions{
-			Compact: true,
-		}),
+		kong.Description("Generate and analyze Aeon terrain layers."),
+		kong.ConfigureHelp(kong.HelpOptions{Compact: true}),
 	)
 
+	switch ctx.Command() {
+	case "analyze":
+		if err := analyze(cli.Analyze.Seed); err != nil {
+			ctx.Fatalf("analysis failed: %v", err)
+		}
+	case "render":
+		if err := render(cli.Render); err != nil {
+			ctx.Fatalf("render failed: %v", err)
+		}
+	default:
+		ctx.Fatalf("unknown command %q", ctx.Command())
+	}
+}
+
+func render(cli RenderCommand) error {
 	if cli.Scale < 1 {
-		ctx.Fatalf("scale must be at least 1")
+		return fmt.Errorf("scale must be at least 1")
 	}
 
 	outputPath, err := sanitizeOutputPath(cli.Output)
 	if err != nil {
-		ctx.Fatalf("invalid output path: %v", err)
+		return fmt.Errorf("invalid output path: %w", err)
 	}
 
 	tm, elevation, err := generateTerrainMap(cli.Seed)
 	if err != nil {
-		ctx.Fatalf("failed to generate terrain map: %v", err)
+		return fmt.Errorf("failed to generate terrain map: %w", err)
 	}
 
 	img, err := renderLayer(*tm, elevation, cli.Layer, cli.Scale)
 	if err != nil {
-		ctx.Fatalf("failed to render layer: %v", err)
+		return fmt.Errorf("failed to render layer: %w", err)
 	}
 
 	outputDir := filepath.Dir(outputPath)
 	if outputDir != "." {
 		if err := os.MkdirAll(outputDir, 0o750); err != nil {
-			ctx.Fatalf("failed to create output directory: %v", err)
+			return fmt.Errorf("failed to create output directory: %w", err)
 		}
 	}
 
 	file, err := os.Create(outputPath) // #nosec G304 -- outputPath is restricted to relative .png paths.
 	if err != nil {
-		ctx.Fatalf("failed to create output file: %v", err)
+		return fmt.Errorf("failed to create output file: %w", err)
 	}
-	defer func() {
-		_ = file.Close()
-	}()
+	defer func() { _ = file.Close() }()
 
 	if err := png.Encode(file, img); err != nil {
-		ctx.Fatalf("failed to encode PNG: %v", err)
+		return fmt.Errorf("failed to encode PNG: %w", err)
 	}
 
 	fmt.Printf("wrote %s\n", outputPath)
+	return nil
 }
 
-func sanitizeOutputPath(raw string) (string, error) {
-	cleaned := filepath.Clean(raw)
-	if cleaned == "" || cleaned == "." {
-		return "", fmt.Errorf("output path is empty")
+func analyze(seed uint64) error {
+	tm, elevation, err := generateTerrainMap(seed)
+	if err != nil {
+		return err
 	}
-	if filepath.IsAbs(cleaned) {
-		return "", fmt.Errorf("absolute output paths are not allowed")
+
+	fmt.Printf("Aeon Terrain Analysis\n")
+	fmt.Printf("Seed: %d\n", seed)
+	fmt.Printf("Map: %dx%d\n\n", tm.Width, tm.Height)
+
+	printScalarStats("Elevation", *elevation, 0, 0)
+	printScalarStats("Moisture", layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 {
+		return cell.Moisture
+	}), 0, 0)
+	printScalarStats("Fertility", layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 {
+		return cell.Fertility
+	}), 0, 0)
+
+	printTerrainDistribution(*tm)
+	printConnectedRegions(*tm)
+	printNeighborAgreement(*tm)
+
+	return nil
+}
+
+func printScalarStats(name string, layer simtypes.Layer, _ float64, _ float64) {
+	minValue := math.Inf(1)
+	maxValue := math.Inf(-1)
+	var sum float64
+	count := layer.Width * layer.Height
+
+	for y := 0; y < layer.Height; y++ {
+		for x := 0; x < layer.Width; x++ {
+			value := layer.Get(x, y)
+			minValue = minFloat(minValue, value)
+			maxValue = maxFloat(maxValue, value)
+			sum += value
+		}
 	}
-	if ext := filepath.Ext(cleaned); ext != ".png" {
-		return "", fmt.Errorf("output file must use .png extension")
+
+	mean := 0.0
+	if count > 0 {
+		mean = sum / float64(count)
 	}
-	return cleaned, nil
+
+	var variance float64
+	if count > 0 {
+		for y := 0; y < layer.Height; y++ {
+			for x := 0; x < layer.Width; x++ {
+				delta := layer.Get(x, y) - mean
+				variance += delta * delta
+			}
+		}
+		variance /= float64(count)
+	}
+
+	fmt.Printf("%s\n", name)
+	fmt.Printf("  min:    %.3f\n", minValue)
+	fmt.Printf("  max:    %.3f\n", maxValue)
+	fmt.Printf("  mean:   %.3f\n", mean)
+	fmt.Printf("  stddev: %.3f\n\n", math.Sqrt(variance))
+}
+
+func printTerrainDistribution(tm simtypes.TerrainMap) {
+	counts := map[simtypes.TerrainType]int{}
+	total := tm.Width * tm.Height
+
+	for y := 0; y < tm.Height; y++ {
+		for x := 0; x < tm.Width; x++ {
+			cell := tm.GetCell(x, y)
+			if cell != nil {
+				counts[cell.Terrain]++
+			}
+		}
+	}
+
+	fmt.Printf("Terrain distribution\n")
+	for _, terrain := range []simtypes.TerrainType{
+		simtypes.TerrainTypeWater,
+		simtypes.TerrainTypePlains,
+		simtypes.TerrainTypeForest,
+		simtypes.TerrainTypeMountain,
+	} {
+		percent := 0.0
+		if total > 0 {
+			percent = float64(counts[terrain]) / float64(total) * 100
+		}
+		fmt.Printf("  %-9s %5.1f%% (%d)\n", terrain.String()+":", percent, counts[terrain])
+	}
+	fmt.Println()
+}
+
+func printConnectedRegions(tm simtypes.TerrainMap) {
+	fmt.Printf("Connected regions\n")
+	for _, terrain := range []simtypes.TerrainType{
+		simtypes.TerrainTypeWater,
+		simtypes.TerrainTypePlains,
+		simtypes.TerrainTypeForest,
+		simtypes.TerrainTypeMountain,
+	} {
+		regions := connectedRegionSizes(tm, terrain)
+		largest := 0
+		isolated := 0
+		for _, size := range regions {
+			largest = maxInt(largest, size)
+			if size == 1 {
+				isolated++
+			}
+		}
+		fmt.Printf("  %-9s regions=%d largest=%d isolated=%d\n", terrain.String()+":", len(regions), largest, isolated)
+	}
+	fmt.Println()
+}
+
+func connectedRegionSizes(tm simtypes.TerrainMap, target simtypes.TerrainType) []int {
+	visited := make([]bool, tm.Width*tm.Height)
+	regions := make([]int, 0)
+
+	for y := 0; y < tm.Height; y++ {
+		for x := 0; x < tm.Width; x++ {
+			index := y*tm.Width + x
+			if visited[index] {
+				continue
+			}
+
+			cell := tm.GetCell(x, y)
+			if cell == nil || cell.Terrain != target {
+				visited[index] = true
+				continue
+			}
+
+			queue := []simtypes.Position{{X: x, Y: y}}
+			visited[index] = true
+			size := 0
+
+			for len(queue) > 0 {
+				current := queue[0]
+				queue = queue[1:]
+				size++
+
+				for _, neighbor := range orthogonalNeighbors(current) {
+					if neighbor.X < 0 || neighbor.X >= tm.Width || neighbor.Y < 0 || neighbor.Y >= tm.Height {
+						continue
+					}
+
+					neighborIndex := neighbor.Y*tm.Width + neighbor.X
+					if visited[neighborIndex] {
+						continue
+					}
+
+					neighborCell := tm.GetCell(neighbor.X, neighbor.Y)
+					if neighborCell == nil || neighborCell.Terrain != target {
+						visited[neighborIndex] = true
+						continue
+					}
+
+					visited[neighborIndex] = true
+					queue = append(queue, neighbor)
+				}
+			}
+
+			regions = append(regions, size)
+		}
+	}
+
+	return regions
+}
+
+func printNeighborAgreement(tm simtypes.TerrainMap) {
+	type counts struct {
+		same int
+		total int
+	}
+
+	agreement := map[simtypes.TerrainType]counts{}
+
+	for y := 0; y < tm.Height; y++ {
+		for x := 0; x < tm.Width; x++ {
+			cell := tm.GetCell(x, y)
+			if cell == nil {
+				continue
+			}
+
+			for _, neighbor := range orthogonalNeighbors(simtypes.Position{X: x, Y: y}) {
+				neighborCell := tm.GetCell(neighbor.X, neighbor.Y)
+				if neighborCell == nil {
+					continue
+				}
+
+				stats := agreement[cell.Terrain]
+				stats.total++
+				if neighborCell.Terrain == cell.Terrain {
+					stats.same++
+				}
+				agreement[cell.Terrain] = stats
+			}
+		}
+	}
+
+	fmt.Printf("Neighbor agreement\n")
+	for _, terrain := range []simtypes.TerrainType{
+		simtypes.TerrainTypeWater,
+		simtypes.TerrainTypePlains,
+		simtypes.TerrainTypeForest,
+		simtypes.TerrainTypeMountain,
+	} {
+		stats := agreement[terrain]
+		percent := 0.0
+		if stats.total > 0 {
+			percent = float64(stats.same) / float64(stats.total) * 100
+		}
+		fmt.Printf("  %-9s %.1f%%\n", terrain.String()+":", percent)
+	}
+}
+
+func orthogonalNeighbors(position simtypes.Position) []simtypes.Position {
+	return []simtypes.Position{
+		{X: position.X - 1, Y: position.Y},
+		{X: position.X + 1, Y: position.Y},
+		{X: position.X, Y: position.Y - 1},
+		{X: position.X, Y: position.Y + 1},
+	}
+}
+
+func layerFromTerrain(tm simtypes.TerrainMap, valueAt func(*simtypes.TerrainCell) float64) simtypes.Layer {
+	layer := simtypes.NewLayer(tm.Width, tm.Height)
+	for y := 0; y < tm.Height; y++ {
+		for x := 0; x < tm.Width; x++ {
+			cell := tm.GetCell(x, y)
+			if cell != nil {
+				layer.Set(x, y, valueAt(cell))
+			}
+		}
+	}
+	return *layer
 }
 
 func generateTerrainMap(seed uint64) (*simtypes.TerrainMap, *simtypes.Layer, error) {
@@ -241,3 +485,11 @@ func maxFloat(a, b float64) float64 {
 	}
 	return b
 }
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
