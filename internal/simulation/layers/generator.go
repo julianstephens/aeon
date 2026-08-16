@@ -121,7 +121,12 @@ func generateMoistureMap(g *Generator, worldSeed [32]byte) *simtypes.LayerMap {
 	return moistureMap
 }
 
-func generateFertilityMap(g *Generator, worldSeed [32]byte, elevationMap *simtypes.LayerMap, moistureMap *simtypes.LayerMap) *simtypes.LayerMap {
+func generateFertilityMap(
+	g *Generator,
+	worldSeed [32]byte,
+	elevationMap *simtypes.LayerMap,
+	moistureMap *simtypes.LayerMap,
+) *simtypes.LayerMap {
 	fertilityMap := simtypes.NewLayerMap(g.width, g.height)
 
 	elevationMin, elevationMax := minMax(elevationMap)
