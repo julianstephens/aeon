@@ -9,6 +9,7 @@ import (
 	"github.com/julianstephens/aeon/internal/simulation/rng"
 	"github.com/julianstephens/go-utils/cliutil"
 	"github.com/julianstephens/go-utils/generic"
+	"github.com/julianstephens/go-utils/logger"
 )
 
 const (
@@ -19,7 +20,7 @@ const (
 type Settlement struct {
 	Name     string
 	Location simtypes.Position
-	agents   []Agent
+	Agents   []Agent
 }
 
 type World struct {
@@ -35,6 +36,12 @@ type World struct {
 }
 
 func NewWorld(seed string) (*World, error) {
+	logger.WithFields(map[string]interface{}{
+		"seed":   seed,
+		"width":  DefaultWorldWidth,
+		"height": DefaultWorldHeight,
+	}).Debug("creating new world")
+
 	terrainMap := simtypes.NewTerrainMap(DefaultWorldWidth, DefaultWorldHeight)
 	seedHash := sha256.Sum256([]byte(seed))
 	random := rng.NewRNG(seedHash)
@@ -49,18 +56,29 @@ func NewWorld(seed string) (*World, error) {
 		historicalEvents: []string{},
 	}
 	if err := world.initialize(); err != nil {
+		logger.Errorf("world initialization failed: %v", err)
 		return nil, err
 	}
+
+	logger.WithFields(map[string]interface{}{
+		"current_year": world.CurrentYear,
+		"population":   world.PopulationCount(),
+	}).Debug("world created")
 	return world, nil
 }
 
 func (w *World) initialize() error {
+	logger.Debug("initializing world terrain map")
 	if err := generateTerrainMap(w); err != nil {
 		return &SimulationError{Code: CodeWorldError, Message: "Failed to generate terrain map", Cause: err}
 	}
+	logger.Debug("terrain map initialized")
+
+	logger.WithField("initial_agents", 100).Debug("generating initial population")
 	if err := generateInitialPopulation(w, 100); err != nil {
 		return &SimulationError{Code: CodeWorldError, Message: "Failed to generate initial population", Cause: err}
 	}
+	logger.WithField("population", w.PopulationCount()).Debug("initial population generated")
 	return nil
 }
 
@@ -116,7 +134,7 @@ func generateTerrainMap(w *World) (err error) {
 }
 
 func generateInitialPopulation(w *World, numAgents int) (err error) {
-	for range numAgents {
+	for i := range numAgents {
 		agent, agentErr := NewAgent(
 			w.random.AgeInRange(0, 70),
 			w.random.Productivity(),
@@ -134,6 +152,13 @@ func generateInitialPopulation(w *World, numAgents int) (err error) {
 			return
 		}
 		w.AddAgent(agent)
+
+		if (i+1)%25 == 0 || i+1 == numAgents {
+			logger.WithFields(map[string]interface{}{
+				"generated": i + 1,
+				"target":    numAgents,
+			}).Debug("initial population generation progress")
+		}
 	}
 	return
 }

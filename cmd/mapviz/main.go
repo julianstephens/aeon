@@ -6,15 +6,17 @@ import (
 	"image"
 	"image/color"
 	"image/png"
-	"log"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/julianstephens/aeon/internal/simtypes"
 	"github.com/julianstephens/aeon/internal/simulation/layers"
 	"github.com/julianstephens/aeon/internal/simulation/rng"
 	"github.com/julianstephens/go-utils/cliutil"
+	"github.com/julianstephens/go-utils/logger"
 )
 
 type LayerType string
@@ -31,11 +33,12 @@ const defaultScale = 8
 
 func main() {
 	args := cliutil.ParseArgs(os.Args[1:])
+	configureLogLevel(args)
 
 	seedStr := args.GetFlagWithDefault("seed", "42")
 	seed, err := strconv.ParseUint(seedStr, 10, 64)
 	if err != nil {
-		log.Fatalf("invalid seed: %v", err)
+		logger.Fatalf("invalid seed: %v", err)
 	}
 
 	layerName := args.GetFlagWithDefault("layer", string(LayerTypeElevation))
@@ -43,37 +46,93 @@ func main() {
 	scaleStr := args.GetFlagWithDefault("scale", strconv.Itoa(defaultScale))
 	scale, err := strconv.Atoi(scaleStr)
 	if err != nil {
-		log.Fatalf("invalid scale: %v", err)
+		logger.Fatalf("invalid scale: %v", err)
 	}
 
 	output := args.GetFlagWithDefault("output", "terrain.png")
+	outputPath, err := sanitizeOutputPath(output)
+	if err != nil {
+		logger.Fatalf("invalid output path: %v", err)
+	}
 
 	if scale < 1 {
-		log.Fatal("scale must be at least 1")
+		logger.Fatal("scale must be at least 1")
 	}
+
+	logger.WithFields(map[string]interface{}{
+		"seed":   seed,
+		"layer":  layerName,
+		"scale":  scale,
+		"output": outputPath,
+	}).Info("generating map visualization")
 
 	tm, elevation := generateTerrainMap(seed)
 
 	img, err := renderLayer(tm, elevation, LayerType(layerName), scale)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
-	file, err := os.Create(output)
+	outputDir := filepath.Dir(outputPath)
+	if outputDir != "." {
+		// #nosec G703 -- outputDir is derived from sanitizeOutputPath-validated relative outputPath.
+		if err := os.MkdirAll(outputDir, 0o750); err != nil {
+			logger.Fatalf("failed to create output directory: %v", err)
+		}
+	}
+
+	// #nosec G304 G703 -- outputPath is sanitized by sanitizeOutputPath and restricted to a relative .png path.
+	file, err := os.Create(outputPath)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	defer func() {
 		if err := file.Close(); err != nil {
-			log.Fatal(err)
+			logger.Errorf("failed to close output file: %v", err)
 		}
 	}()
 
 	if err := png.Encode(file, img); err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
-	fmt.Printf("wrote %s\n", output)
+	logger.Infof("wrote %s", outputPath)
+}
+
+func sanitizeOutputPath(raw string) (string, error) {
+	cleaned := filepath.Clean(strings.TrimSpace(raw))
+	if cleaned == "" || cleaned == "." {
+		return "", fmt.Errorf("output path is empty")
+	}
+	if filepath.IsAbs(cleaned) {
+		return "", fmt.Errorf("absolute output paths are not allowed")
+	}
+
+	ext := strings.ToLower(filepath.Ext(cleaned))
+	if ext == "" {
+		cleaned += ".png"
+		ext = ".png"
+	}
+	if ext != ".png" {
+		return "", fmt.Errorf("output file must use .png extension")
+	}
+
+	return cleaned, nil
+}
+
+func configureLogLevel(args *cliutil.Args) {
+	level := args.GetFlag("log-level")
+	if level == "" {
+		level = os.Getenv("AEON_LOG_LEVEL")
+	}
+	if level == "" {
+		level = "info"
+	}
+
+	if err := logger.SetLogLevel(level); err != nil {
+		logger.Warnf("invalid log level %q, falling back to info", level)
+		_ = logger.SetLogLevel("info")
+	}
 }
 
 func generateTerrainMap(seed uint64) (simtypes.TerrainMap, *simtypes.ElevationMap) {
@@ -119,7 +178,15 @@ func renderLayer(
 			return cell.FoodCapacity
 		}), nil
 	default:
-		return nil, fmt.Errorf("unknown layer %q; valid layers: %s, %s, %s, %s, %s", layer, LayerTypeTerrain, LayerTypeElevation, LayerTypeMoisture, LayerTypeFertility, LayerTypeFoodCapacity)
+		return nil, fmt.Errorf(
+			"unknown layer %q; valid layers: %s, %s, %s, %s, %s",
+			layer,
+			LayerTypeTerrain,
+			LayerTypeElevation,
+			LayerTypeMoisture,
+			LayerTypeFertility,
+			LayerTypeFoodCapacity,
+		)
 	}
 }
 
