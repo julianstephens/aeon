@@ -2,17 +2,19 @@ package main
 
 import (
 	"crypto/sha256"
-	"flag"
 	"fmt"
 	"image"
 	"image/color"
 	"image/png"
 	"log"
+	"math"
 	"os"
+	"strconv"
 
 	"github.com/julianstephens/aeon/internal/simtypes"
 	"github.com/julianstephens/aeon/internal/simulation/layers"
 	"github.com/julianstephens/aeon/internal/simulation/rng"
+	"github.com/julianstephens/go-utils/cliutil"
 )
 
 type LayerType string
@@ -28,25 +30,36 @@ const (
 const defaultScale = 8
 
 func main() {
-	seed := flag.Uint64("seed", 42, "Terrain generation seed")
-	layerName := flag.String("layer", string(LayerTypeElevation), "Layer to render")
-	scale := flag.Int("scale", defaultScale, "Scale factor for each map cell")
-	output := flag.String("output", "terrain.png", "Output PNG path")
+	args := cliutil.ParseArgs(os.Args[1:])
 
-	flag.Parse()
+	seedStr := args.GetFlagWithDefault("seed", "42")
+	seed, err := strconv.ParseUint(seedStr, 10, 64)
+	if err != nil {
+		log.Fatalf("invalid seed: %v", err)
+	}
 
-	if *scale < 1 {
+	layerName := args.GetFlagWithDefault("layer", string(LayerTypeElevation))
+
+	scaleStr := args.GetFlagWithDefault("scale", strconv.Itoa(defaultScale))
+	scale, err := strconv.Atoi(scaleStr)
+	if err != nil {
+		log.Fatalf("invalid scale: %v", err)
+	}
+
+	output := args.GetFlagWithDefault("output", "terrain.png")
+
+	if scale < 1 {
 		log.Fatal("scale must be at least 1")
 	}
 
-	tm, elevation := generateTerrainMap(*seed)
+	tm, elevation := generateTerrainMap(seed)
 
-	img, err := renderLayer(tm, elevation, LayerType(*layerName), *scale)
+	img, err := renderLayer(tm, elevation, LayerType(layerName), scale)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	file, err := os.Create(*output)
+	file, err := os.Create(output)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -60,11 +73,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("wrote %s\n", *output)
+	fmt.Printf("wrote %s\n", output)
 }
 
 func generateTerrainMap(seed uint64) (simtypes.TerrainMap, *simtypes.ElevationMap) {
-	seedBytes := sha256.Sum256([]byte(fmt.Sprintf("%d", seed)))
+	seedBytes := sha256.Sum256(fmt.Appendf(nil, "%d", seed))
 	random := rng.NewRNG(seedBytes)
 
 	tm := simtypes.NewTerrainMap(
@@ -131,6 +144,7 @@ func renderTerrainMap(tm simtypes.TerrainMap, scale int) image.Image {
 
 func renderElevationMap(em simtypes.ElevationMap, width, height, scale int) image.Image {
 	img := image.NewGray(image.Rect(0, 0, width*scale, height*scale))
+	minValue, maxValue := math.Inf(1), math.Inf(-1)
 
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
@@ -138,7 +152,23 @@ func renderElevationMap(em simtypes.ElevationMap, width, height, scale int) imag
 				continue
 			}
 
-			value := normalize(em.Get(x, y))
+			v := em.Get(x, y)
+			if v < minValue {
+				minValue = v
+			}
+			if v > maxValue {
+				maxValue = v
+			}
+		}
+	}
+
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			if x >= em.Width || y >= em.Height {
+				continue
+			}
+
+			value := normalizeToRange(em.Get(x, y), minValue, maxValue)
 			fillCell(img, x, y, scale, color.Gray{Y: uint8(value * 255)})
 		}
 	}
@@ -148,10 +178,23 @@ func renderElevationMap(em simtypes.ElevationMap, width, height, scale int) imag
 
 func renderScalarLayer(width, height, scale int, valueAt func(x, y int) float64) image.Image {
 	img := image.NewGray(image.Rect(0, 0, width*scale, height*scale))
+	minValue, maxValue := math.Inf(1), math.Inf(-1)
 
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
-			value := normalize(valueAt(x, y))
+			v := valueAt(x, y)
+			if v < minValue {
+				minValue = v
+			}
+			if v > maxValue {
+				maxValue = v
+			}
+		}
+	}
+
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			value := normalizeToRange(valueAt(x, y), minValue, maxValue)
 			fillCell(img, x, y, scale, color.Gray{Y: uint8(value * 255)})
 		}
 	}
@@ -182,14 +225,20 @@ func terrainColor(terrain simtypes.TerrainType) color.Color {
 	}
 }
 
-func normalize(value float64) float64 {
+func normalizeToRange(value, minValue, maxValue float64) float64 {
+	if maxValue <= minValue {
+		return 0.5
+	}
+
+	normalized := (value - minValue) / (maxValue - minValue)
+
 	switch {
-	case value < 0:
+	case normalized < 0:
 		return 0
-	case value > 1:
+	case normalized > 1:
 		return 1
 	default:
-		return value
+		return normalized
 	}
 }
 

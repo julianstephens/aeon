@@ -1,8 +1,8 @@
 package simtypes
 
 const (
-	DefaultMapWidth  = 64
-	DefaultMapHeight = 64
+	DefaultMapWidth  = 65
+	DefaultMapHeight = 65
 
 	RoughnessDelta = 0.6
 )

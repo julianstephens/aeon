@@ -178,10 +178,10 @@ func (r *RNG) Location() simtypes.Position {
 
 // Elevation generates a random elevation value between 0 and 1 (inclusive).
 // The roughness parameter can be used to influence the distribution of elevation values. If roughness is nil, a uniform distribution is used.
-// If roughness is provided, a normal distribution is used with the specified roughness as the standard deviation.
+// If roughness is provided, a zero-mean normal distribution is used with the specified roughness as the standard deviation.
 func (r *RNG) Elevation(roughness *float64) float64 {
 	if roughness != nil {
-		return r.rnd.NormFloat64()*(*roughness) + 0.5
+		return r.rnd.NormFloat64() * (*roughness)
 	}
 	return r.rnd.Float64()
 }
