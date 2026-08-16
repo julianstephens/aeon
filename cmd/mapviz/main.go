@@ -115,22 +115,23 @@ func analyze(seed uint64) error {
 	fmt.Printf("Seed: %d\n", seed)
 	fmt.Printf("Map: %dx%d\n\n", tm.Width, tm.Height)
 
-	printScalarStats("Elevation", *elevation, 0, 0)
+	printScalarStats("Elevation", *elevation)
 	printScalarStats("Moisture", layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 {
 		return cell.Moisture
-	}), 0, 0)
+	}))
 	printScalarStats("Fertility", layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 {
 		return cell.Fertility
-	}), 0, 0)
+	}))
 
 	printTerrainDistribution(*tm)
 	printConnectedRegions(*tm)
+	printTerrainBoundaries(*tm)
 	printNeighborAgreement(*tm)
 
 	return nil
 }
 
-func printScalarStats(name string, layer simtypes.Layer, _ float64, _ float64) {
+func printScalarStats(name string, layer simtypes.Layer) {
 	minValue := math.Inf(1)
 	maxValue := math.Inf(-1)
 	var sum float64
@@ -217,6 +218,47 @@ func printConnectedRegions(tm simtypes.TerrainMap) {
 		fmt.Printf("  %-9s regions=%d largest=%d isolated=%d\n", terrain.String()+":", len(regions), largest, isolated)
 	}
 	fmt.Println()
+}
+
+func printTerrainBoundaries(tm simtypes.TerrainMap) {
+	fmt.Printf("Terrain boundaries\n")
+	total := tm.Width * tm.Height
+
+	for _, terrain := range []simtypes.TerrainType{
+		simtypes.TerrainTypeWater,
+		simtypes.TerrainTypeMountain,
+	} {
+		boundaryCells := countBoundaryCells(tm, terrain)
+		percent := 0.0
+		if total > 0 {
+			percent = float64(boundaryCells) / float64(total) * 100
+		}
+		fmt.Printf("  %-9s cells=%d (%5.1f%%)\n", terrain.String()+":", boundaryCells, percent)
+	}
+	fmt.Println()
+}
+
+func countBoundaryCells(tm simtypes.TerrainMap, target simtypes.TerrainType) int {
+	count := 0
+
+	for y := 0; y < tm.Height; y++ {
+		for x := 0; x < tm.Width; x++ {
+			cell := tm.GetCell(x, y)
+			if cell == nil || cell.Terrain != target {
+				continue
+			}
+
+			for _, neighbor := range orthogonalNeighbors(simtypes.Position{X: x, Y: y}) {
+				neighborCell := tm.GetCell(neighbor.X, neighbor.Y)
+				if neighborCell != nil && neighborCell.Terrain != target {
+					count++
+					break
+				}
+			}
+		}
+	}
+
+	return count
 }
 
 func connectedRegionSizes(tm simtypes.TerrainMap, target simtypes.TerrainType) []int {
@@ -493,16 +535,16 @@ func maxInt(a, b int) int {
 	return b
 }
 
-func sanitizeOutputPath(path string) (string, error) {
-	if filepath.IsAbs(path) {
-		return "", fmt.Errorf("output path must be relative")
+func sanitizeOutputPath(raw string) (string, error) {
+	cleaned := filepath.Clean(raw)
+	if cleaned == "" || cleaned == "." {
+		return "", fmt.Errorf("output path is empty")
 	}
-	if filepath.Ext(path) != ".png" {
-		return "", fmt.Errorf("output path must have .png extension")
+	if filepath.IsAbs(cleaned) {
+		return "", fmt.Errorf("absolute output paths are not allowed")
 	}
-	cleaned := filepath.Clean(path)
-	if cleaned == "." || cleaned == ".." || cleaned == "" {
-		return "", fmt.Errorf("invalid output path")
+	if filepath.Ext(cleaned) != ".png" {
+		return "", fmt.Errorf("output file must use .png extension")
 	}
 	return cleaned, nil
 }
