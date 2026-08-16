@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"flag"
 	"fmt"
 	"image"
@@ -63,20 +64,17 @@ func main() {
 }
 
 func generateTerrainMap(seed uint64) (simtypes.TerrainMap, *simtypes.ElevationMap) {
-	random := rng.New(seed)
+	seedBytes := sha256.Sum256([]byte(fmt.Sprintf("%d", seed)))
+	random := rng.NewRNG(seedBytes)
 
 	tm := simtypes.NewTerrainMap(
 		simtypes.DefaultMapWidth,
 		simtypes.DefaultMapHeight,
 	)
 
-	generator := layers.NewGenerator(tm.Width, tm.Height, random)
-	if err := generator.GenerateTerrainMap(&tm); err != nil {
-		log.Fatal(err)
-	}
-
 	elevationGenerator := layers.NewDSGenerator(max(tm.Width, tm.Height), random)
 	elevation := elevationGenerator.Generate()
+	tm.ApplyElevation(*elevation)
 
 	return tm, elevation
 }
