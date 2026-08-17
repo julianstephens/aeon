@@ -6,11 +6,47 @@ import (
 )
 
 const (
+	// Elevation values at these extremes are treated as hard geographic constraints.
+	WaterElevationThreshold    = 0.12
+	MountainElevationThreshold = 0.92
+
+	// Scores are weighted independently so the middle of the elevation range can
+	// be classified using moisture, fertility, and neighborhood context.
+	WaterElevationWeight       = 0.55
+	WaterMoistureWeight        = 0.20
+	WaterNeighborhoodWeight    = 0.25
+	MountainElevationWeight    = 0.60
+	MountainNeighborhoodWeight = 0.25
+	MountainFertilityPenalty   = 0.15
+	ForestMoistureWeight       = 0.50
+	ForestFertilityWeight      = 0.20
+	ForestElevationWeight      = 0.10
+	ForestNeighborhoodWeight   = 0.20
+	PlainsFertilityWeight      = 0.35
+	PlainsMoistureWeight       = 0.20
+	PlainsElevationWeight      = 0.25
+	PlainsNeighborhoodWeight   = 0.20
+
 	MaxClassificationIterations = 3
 )
 
 type TerrainClassifier struct {
 	tm *simtypes.TerrainMap
+}
+
+type TerrainScores struct {
+	Water    float64
+	Plains   float64
+	Forest   float64
+	Mountain float64
+}
+
+type NeighborTerrainStats struct {
+	Total    int
+	Water    int
+	Plains   int
+	Forest   int
+	Mountain int
 }
 
 func NewTerrainClassifier(tm *simtypes.TerrainMap) *TerrainClassifier {
@@ -19,27 +55,30 @@ func NewTerrainClassifier(tm *simtypes.TerrainMap) *TerrainClassifier {
 	}
 }
 
-// Classify takes a terrain map and classifies each cell into a terrain type based on elevation, moisture, and fertility.
+// Classify assigns a terrain type to every cell using elevation, moisture,
+// fertility, and local terrain context. Elevation provides hard constraints
+// only at geographic extremes; the middle of the range is resolved by scores.
 func (tc *TerrainClassifier) Classify(elevation, moisture, fertility, terrain *simtypes.Layer) error {
 	logger.Debug("building initial terrain layer")
 	if err := tc.setInitialTerrainTypes(terrain); err != nil {
 		return err
 	}
-	logger.Debug("initial terrain layer built")
 
-	logger.WithFields(map[string]interface{}{
-		"max_iterations": MaxClassificationIterations,
-	}).Debug("beginning terrain classification")
-	for i := range MaxClassificationIterations {
+	for i := 0; i < MaxClassificationIterations; i++ {
 		for x := 0; x < tc.tm.Width; x++ {
 			for y := 0; y < tc.tm.Height; y++ {
 				cell := tc.tm.GetCell(x, y)
-				elev := elevation.Get(x, y)
-				moist := moisture.Get(x, y)
-				fert := fertility.Get(x, y)
-				ter := terrain.Get(x, y)
+				if cell == nil {
+					continue
+				}
 
-				terrainType := tc.classifyCell(*cell, elev, moist, fert, ter, tc.getNeighboringTerrainTypes(*cell))
+				terrainType := tc.classifyCell(
+					cell.Location,
+					elevation.Get(x, y),
+					moisture.Get(x, y),
+					fertility.Get(x, y),
+					tc.getNeighborTerrainStats(cell.Location),
+				)
 
 				if err := tc.tm.SetTerrainType(x, y, terrainType); err != nil {
 					return &PipelineError{
@@ -50,11 +89,8 @@ func (tc *TerrainClassifier) Classify(elevation, moisture, fertility, terrain *s
 				}
 			}
 		}
-		logger.WithFields(map[string]any{
-			"iteration": i + 1,
-		}).Debug("terrain classification iteration completed")
 	}
-	logger.Debug("terrain classification completed")
+
 	return nil
 }
 
@@ -80,84 +116,169 @@ func (tc *TerrainClassifier) setInitialTerrainTypes(terrain *simtypes.Layer) err
 	return nil
 }
 
-func (tc *TerrainClassifier) getNeighboringTerrainTypes(cell simtypes.TerrainCell) map[simtypes.TerrainType]int {
-	neighboringTypes := make(map[simtypes.TerrainType]int)
+func (tc *TerrainClassifier) getNeighborTerrainStats(position simtypes.Position) NeighborTerrainStats {
+	var stats NeighborTerrainStats
+
 	for dx := -1; dx <= 1; dx++ {
 		for dy := -1; dy <= 1; dy++ {
 			if dx == 0 && dy == 0 {
 				continue
 			}
-			neighborX := cell.Location.X + dx
-			neighborY := cell.Location.Y + dy
-			neighborCell := tc.tm.GetCell(neighborX, neighborY)
-			if neighborCell != nil {
-				neighboringTypes[neighborCell.Terrain]++
+
+			cell := tc.tm.GetCell(position.X+dx, position.Y+dy)
+			if cell == nil {
+				continue
+			}
+
+			stats.Total++
+			switch cell.Terrain {
+			case simtypes.TerrainTypeWater:
+				stats.Water++
+			case simtypes.TerrainTypePlains:
+				stats.Plains++
+			case simtypes.TerrainTypeForest:
+				stats.Forest++
+			case simtypes.TerrainTypeMountain:
+				stats.Mountain++
 			}
 		}
 	}
 
-	return neighboringTypes
+	return stats
+}
+
+func (s NeighborTerrainStats) fraction(count int) float64 {
+	if s.Total == 0 {
+		return 0
+	}
+	return float64(count) / float64(s.Total)
 }
 
 func (tc *TerrainClassifier) classifyCell(
-	cell simtypes.TerrainCell,
-	elevation, moisture, fertility, terrain float64,
-	neighboringTypes map[simtypes.TerrainType]int,
+	location simtypes.Position,
+	elevation, moisture, fertility float64,
+	neighbors NeighborTerrainStats,
 ) simtypes.TerrainType {
-	// 1. If the cell is an isolated forest surrounded by plains, it becomes plains.
-	if cell.Terrain == simtypes.TerrainTypeForest && isIsolatedForest(neighboringTypes) {
-		return simtypes.TerrainTypePlains
-	}
-
-	// 2. If the cell is an isolated plain surrounded by forest, it becomes forest.
-	if cell.Terrain == simtypes.TerrainTypePlains && isIsolatedPlains(neighboringTypes) {
-		return simtypes.TerrainTypeForest
-	}
-
-	// 3. If the cell is a isolated water surrounded by land, it becomes land.
-	isolated, isolatedBy := isIsolatedWater(neighboringTypes)
-	if cell.Terrain == simtypes.TerrainTypeWater && isolated {
-		return isolatedBy
-	}
-
-	// 4. If the cell is water, it remains water.
-	if cell.Terrain == simtypes.TerrainTypeWater || elevation < WaterThreshold {
+	// Extremes are physical constraints. This prevents tiny high-elevation or
+	// low-elevation variations from being negotiated away by the score model.
+	if elevation <= WaterElevationThreshold {
 		return simtypes.TerrainTypeWater
 	}
-
-	// 5. If the cell is a mountain, it remains a mountain.
-	if cell.Terrain == simtypes.TerrainTypeMountain || elevation > MountainThreshold {
+	if elevation >= MountainElevationThreshold {
 		return simtypes.TerrainTypeMountain
 	}
 
-	return cell.Terrain
+	scores := tc.scoreCell(elevation, moisture, fertility, neighbors)
+	return scores.maxTerrain()
 }
 
-func isIsolatedForest(neighboringTypes map[simtypes.TerrainType]int) bool {
-	if neighboringTypes[simtypes.TerrainTypeForest] > 0 {
-		return false
+func (tc *TerrainClassifier) scoreCell(
+	elevation, moisture, fertility float64,
+	neighbors NeighborTerrainStats,
+) TerrainScores {
+	waterNeighbors := neighbors.fraction(neighbors.Water)
+	mountainNeighbors := neighbors.fraction(neighbors.Mountain)
+	forestNeighbors := neighbors.fraction(neighbors.Forest)
+	plainsNeighbors := neighbors.fraction(neighbors.Plains)
+
+	return TerrainScores{
+		Water: waterScore(
+			elevation,
+			moisture,
+			waterNeighbors,
+		),
+		Plains: plainsScore(
+			elevation,
+			moisture,
+			fertility,
+			plainsNeighbors,
+		),
+		Forest: forestScore(
+			elevation,
+			moisture,
+			fertility,
+			forestNeighbors,
+		),
+		Mountain: mountainScore(
+			elevation,
+			fertility,
+			mountainNeighbors,
+		),
 	}
-	return true
 }
 
-func isIsolatedPlains(neighboringTypes map[simtypes.TerrainType]int) bool {
-	if neighboringTypes[simtypes.TerrainTypePlains] > 0 {
-		return false
-	}
-	return true
+func waterScore(elevation, moisture, waterNeighbors float64) float64 {
+	// Water prefers low elevation, higher moisture, and adjacency to existing water.
+	lowland := 1 - normalizeRange(elevation, WaterElevationThreshold, MountainElevationThreshold)
+	return WaterElevationWeight*lowland +
+		WaterMoistureWeight*moisture +
+		WaterNeighborhoodWeight*waterNeighbors
 }
 
-func isIsolatedWater(neighboringTypes map[simtypes.TerrainType]int) (bool, simtypes.TerrainType) {
-	if neighboringTypes[simtypes.TerrainTypeWater] > 0 {
-		return false, simtypes.TerrainTypeWater
+func mountainScore(elevation, fertility, mountainNeighbors float64) float64 {
+	highland := normalizeRange(elevation, WaterElevationThreshold, MountainElevationThreshold)
+	fertilityPenalty := fertility * MountainFertilityPenalty
+	return MountainElevationWeight*highland +
+		MountainNeighborhoodWeight*mountainNeighbors +
+		(1-fertilityPenalty)
+}
+
+func forestScore(elevation, moisture, fertility, forestNeighbors float64) float64 {
+	moderateElevation := 1 - abs(2*elevation-0.75)
+	return ForestMoistureWeight*moisture +
+		ForestFertilityWeight*fertility +
+		ForestElevationWeight*clamp01(moderateElevation) +
+		ForestNeighborhoodWeight*forestNeighbors
+}
+
+func plainsScore(elevation, moisture, fertility, plainsNeighbors float64) float64 {
+	moderateElevation := 1 - abs(2*elevation-0.55)
+	moderateMoisture := 1 - abs(2*moisture-0.75)
+	return PlainsFertilityWeight*fertility +
+		PlainsMoistureWeight*clamp01(moderateMoisture) +
+		PlainsElevationWeight*clamp01(moderateElevation) +
+		PlainsNeighborhoodWeight*plainsNeighbors
+}
+
+func (s TerrainScores) maxTerrain() simtypes.TerrainType {
+	terrain := simtypes.TerrainTypePlains
+	maxScore := s.Plains
+
+	if s.Water > maxScore {
+		terrain = simtypes.TerrainTypeWater
+		maxScore = s.Water
 	}
-	maxCount := 0
-	newTerrainType := simtypes.TerrainTypePlains
-	for terrainType, count := range neighboringTypes {
-		if count > maxCount && terrainType != simtypes.TerrainTypeWater {
-			maxCount = count
-			newTerrainType = terrainType
-		}
+	if s.Forest > maxScore {
+		terrain = simtypes.TerrainTypeForest
+		maxScore = s.Forest
 	}
-	return true, newTerrainType
+	if s.Mountain > maxScore {
+		terrain = simtypes.TerrainTypeMountain
+	}
+
+	return terrain
+}
+
+func normalizeRange(value, minValue, maxValue float64) float64 {
+	if maxValue <= minValue {
+		return 0
+	}
+	return clamp01((value - minValue) / (maxValue - minValue))
+}
+
+func clamp01(value float64) float64 {
+	if value < 0 {
+		return 0
+	}
+	if value > 1 {
+		return 1
+	}
+	return value
+}
+
+func abs(value float64) float64 {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
