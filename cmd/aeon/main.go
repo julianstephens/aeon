@@ -3,39 +3,37 @@ package main
 import (
 	"fmt"
 	"os"
-	"strconv"
 
+	"github.com/alecthomas/kong"
 	"github.com/julianstephens/aeon/internal/simulation"
 	"github.com/julianstephens/go-utils/cliutil"
 	"github.com/julianstephens/go-utils/logger"
 )
 
+type CLI struct {
+	Seed     string `help:"Seed for world generation." default:"default_world_001"`
+	Years    int    `help:"Number of years to simulate." default:"1"`
+	LogLevel string `help:"Log level." default:"info" env:"AEON_LOG_LEVEL"`
+}
+
 func main() {
-	args := cliutil.ParseArgs(os.Args)
+	var cli CLI
+	kong.Parse(&cli,
+		kong.Name("aeon"),
+		kong.Description("Run Aeon world simulations."),
+		kong.ConfigureHelp(kong.HelpOptions{Compact: true}),
+	)
 	cliutil.SetDefaultConsole(cliutil.NewConsole(cliutil.NewColoredFormatter(), os.Stdout))
 	c := cliutil.DefaultConsole()
-	configureLogLevel(args)
-
-	seed := args.GetFlag("--seed")
-	if seed == "" {
-		seed = "default_world_001"
-	}
-
-	years := args.GetFlagWithDefault("--years", "1")
-	yearsNum, err := strconv.Atoi(years)
-	if err != nil {
-		logger.Errorf("invalid years flag value: %s", years)
-		_ = c.Error(fmt.Sprintf("Invalid years flag: %s", years))
-		os.Exit(1)
-	}
+	configureLogLevel(cli.LogLevel)
 
 	logger.WithFields(map[string]any{
-		"seed":  seed,
-		"years": yearsNum,
+		"seed":  cli.Seed,
+		"years": cli.Years,
 	}).Info("starting simulation run")
-	_ = c.Info(fmt.Sprintf("Generating world with seed '%s' for %d years...", seed, yearsNum))
+	_ = c.Info(fmt.Sprintf("Generating world with seed '%s' for %d years...", cli.Seed, cli.Years))
 
-	err = simulation.Run(c, seed, yearsNum)
+	err := simulation.Run(c, cli.Seed, cli.Years)
 	if err != nil {
 		logger.Errorf("error running simulation: %v", err)
 		_ = c.Error(fmt.Sprintf("Error running simulation: %v", err))
@@ -45,15 +43,7 @@ func main() {
 	logger.Info("simulation completed")
 }
 
-func configureLogLevel(args *cliutil.Args) {
-	level := args.GetFlag("--log-level")
-	if level == "" {
-		level = os.Getenv("AEON_LOG_LEVEL")
-	}
-	if level == "" {
-		level = "info"
-	}
-
+func configureLogLevel(level string) {
 	if err := logger.SetLogLevel(level); err != nil {
 		logger.Warnf("invalid log level %q, falling back to info", level)
 		_ = logger.SetLogLevel("info")
