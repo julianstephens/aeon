@@ -12,6 +12,13 @@ import (
 const (
 	windowWidth  = 1280
 	windowHeight = 800
+
+	headerHeight   = 56
+	footerHeight   = 80
+	sidebarWidth   = 200
+	inspectorWidth = 320
+	contentHeight  = windowHeight - headerHeight - footerHeight
+	mapPanelWidth  = windowWidth - sidebarWidth - inspectorWidth
 )
 
 type App struct {
@@ -38,7 +45,6 @@ func NewApp(cfg simulation.GUIConfig) (*App, error) {
 		snapshot:       sim.Snapshot(),
 		layer:          LayerTerrain,
 		yearsPerSecond: 1,
-		selectedCell:   nil,
 	}, nil
 }
 
@@ -67,12 +73,7 @@ func (a *App) Update() error {
 		a.snapshot = a.simulation.Snapshot()
 		a.playing = false
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyLeft) {
-		if err := a.reset(); err != nil {
-			return err
-		}
-	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyR) {
+	if inpututil.IsKeyJustPressed(ebiten.KeyLeft) || inpututil.IsKeyJustPressed(ebiten.KeyR) {
 		if err := a.reset(); err != nil {
 			return err
 		}
@@ -96,24 +97,27 @@ func (a *App) Update() error {
 func (a *App) Draw(screen *ebiten.Image) {
 	screen.Fill(themeBackground)
 
-	headerRect := image.Rect(0, 0, windowWidth, 64)
-	drawPanel(screen, headerRect, themePanel, 2)
+	headerRect := image.Rect(0, 0, windowWidth, headerHeight)
+	drawPanel(screen, headerRect, themePanel, 1)
 	drawHeader(screen, a.snapshot, a.config.Seed)
 
-	sidebarRect := image.Rect(0, 64, 220, 720)
-	drawPanel(screen, sidebarRect, themePanel, 2)
+	contentTop := headerHeight
+	contentBottom := windowHeight - footerHeight
+	sidebarRect := image.Rect(0, contentTop, sidebarWidth, contentBottom)
+	mapPanelRect := image.Rect(sidebarWidth, contentTop, windowWidth-inspectorWidth, contentBottom)
+	inspectorRect := image.Rect(windowWidth-inspectorWidth, contentTop, windowWidth, contentBottom)
+
+	drawPanel(screen, sidebarRect, themePanel, 1)
 	drawLayerList(screen, sidebarRect, a.layer)
 
-	mapRect := image.Rect(220, 64, 1020, 720)
-	drawPanel(screen, mapRect, themePanel, 2)
-	drawMap(screen, a.snapshot, a.layer, mapRect, a.selectedCell)
+	drawPanel(screen, mapPanelRect, themePanel, 1)
+	drawMapPanel(screen, mapPanelRect, a.snapshot, a.layer, a.selectedCell)
 
-	inspectorRect := image.Rect(1020, 64, 1280, 720)
-	drawPanel(screen, inspectorRect, themePanel, 2)
+	drawPanel(screen, inspectorRect, themePanel, 1)
 	drawInspector(screen, inspectorRect, a.snapshot, a.selectedCell)
 
-	controlsRect := image.Rect(0, 720, windowWidth, windowHeight)
-	drawPanel(screen, controlsRect, themePanel, 2)
+	controlsRect := image.Rect(0, contentBottom, windowWidth, windowHeight)
+	drawPanel(screen, controlsRect, themePanel, 1)
 	drawControls(screen, controlsRect, a)
 }
 
@@ -122,8 +126,7 @@ func (a *App) Layout(outsideWidth, outsideHeight int) (int, int) {
 }
 
 func (a *App) reset() error {
-	cfg := a.config
-	rebuilt, err := simulation.NewSimulationWithConfig(cfg)
+	rebuilt, err := simulation.NewSimulationWithConfig(a.config)
 	if err != nil {
 		return err
 	}
@@ -158,19 +161,31 @@ func (a *App) displaySpeed() float64 {
 	return a.yearsPerSecond
 }
 
+func (a *App) mapViewport() image.Rectangle {
+	panel := image.Rect(sidebarWidth, headerHeight, windowWidth-inspectorWidth, windowHeight-footerHeight)
+	padding := 16
+	top := panel.Min.Y + 40
+	availableWidth := panel.Dx() - 2*padding
+	availableHeight := panel.Max.Y - top - padding
+	size := availableWidth
+	if availableHeight < size {
+		size = availableHeight
+	}
+	left := panel.Min.X + (panel.Dx()-size)/2
+	return image.Rect(left, top, left+size, top+size)
+}
+
 func (a *App) mapCellFromMouse() (*CellSelection, bool) {
 	posX, posY := ebiten.CursorPosition()
-	viewport := image.Rect(220, 64, 1020, 720)
+	viewport := a.mapViewport()
 	if !pointInRect(posX, posY, viewport) {
 		return nil, false
 	}
 	mapW, mapH := a.snapshot.TerrainMap.Width, a.snapshot.TerrainMap.Height
-	innerX := posX - viewport.Min.X
-	innerY := posY - viewport.Min.Y
 	cellW := float64(viewport.Dx()) / float64(mapW)
 	cellH := float64(viewport.Dy()) / float64(mapH)
-	cellX := int(float64(innerX) / cellW)
-	cellY := int(float64(innerY) / cellH)
+	cellX := int(float64(posX-viewport.Min.X) / cellW)
+	cellY := int(float64(posY-viewport.Min.Y) / cellH)
 	if cellX < 0 || cellX >= mapW || cellY < 0 || cellY >= mapH {
 		return nil, false
 	}
@@ -184,9 +199,11 @@ func pointInRect(x, y int, r image.Rectangle) bool {
 func drawPanel(screen *ebiten.Image, rect image.Rectangle, col color.Color, border int) {
 	img := ebiten.NewImage(rect.Dx(), rect.Dy())
 	img.Fill(col)
-	screen.DrawImage(img, &ebiten.DrawImageOptions{})
+	opts := &ebiten.DrawImageOptions{}
+	opts.GeoM.Translate(float64(rect.Min.X), float64(rect.Min.Y))
+	screen.DrawImage(img, opts)
 	if border > 0 {
-		drawBorderRect(screen, rect, themeAccent, border)
+		drawBorderRect(screen, rect, themeBorder, border)
 	}
 }
 
