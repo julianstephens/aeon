@@ -23,8 +23,6 @@ func Run(c *cliutil.Console, seed string, years int) error {
 
 	w, err := NewWorld(seed, PopulationParameters{
 		GrowthRate:      0.025,
-		StarvationRate:  0.1,
-		MigrationRate:   0.07,
 		MaxCellCapacity: 30,
 	})
 	if err != nil {
@@ -91,7 +89,7 @@ func summarizeTerrainPopulation(terrainMap *simtypes.TerrainMap, maxCellCapacity
 	var totalPopulation float64
 	var totalCarryingCapacity float64
 	occupiedCells := 0
-	overCapacityCells := 0
+overCapacityCells := 0
 
 	for _, cell := range terrainMap.Cells {
 		cellCapacity := cell.FoodCapacity * maxCellCapacity
