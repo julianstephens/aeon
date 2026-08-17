@@ -148,6 +148,70 @@ func TestPopulationModel_IsolatedIndependentCells_ApproachSumOfLocalCapacities(t
 	}
 }
 
+func TestPopulationModel_Growth_NoMigrationSingleCell_GrowsAfterOneYear(t *testing.T) {
+	pm := NewPopulationModel(PopulationParameters{
+		GrowthRate:      0.025,
+		StarvationRate:  0,
+		MigrationRate:   0,
+		MaxCellCapacity: 30,
+	})
+	tm := terrainMapWithPopulation(1, 10)
+
+	pm.AdvanceOneYear(tm)
+
+	if tm.Cells[0].Population <= 10 {
+		t.Fatalf("expected population to grow above 10 after one year, got %.4f", tm.Cells[0].Population)
+	}
+}
+
+func TestPopulationModel_Growth_NoMigrationSingleCell_GrowsSubstantiallyOverTime(t *testing.T) {
+	pm := NewPopulationModel(PopulationParameters{
+		GrowthRate:      0.025,
+		StarvationRate:  0,
+		MigrationRate:   0,
+		MaxCellCapacity: 30,
+	})
+	tm := terrainMapWithPopulation(1, 10)
+
+	for i := 0; i < 100; i++ {
+		pm.AdvanceOneYear(tm)
+	}
+
+	if tm.Cells[0].Population <= 20 {
+		t.Fatalf("expected population to exceed 20 after 100 years, got %.4f", tm.Cells[0].Population)
+	}
+}
+
+func TestPopulationModel_Growth_NoMigrationHundredCells_ApproachesTotalCapacity(t *testing.T) {
+	pm := NewPopulationModel(PopulationParameters{
+		GrowthRate:      0.025,
+		StarvationRate:  0,
+		MigrationRate:   0,
+		MaxCellCapacity: 30,
+	})
+
+	foodCapacities := make([]float64, 100)
+	populations := make([]float64, 100)
+	for i := range foodCapacities {
+		foodCapacities[i] = 1
+		populations[i] = 10
+	}
+	tm := terrainMapWithPopulationSet(foodCapacities, populations)
+
+	for i := 0; i < 500; i++ {
+		pm.AdvanceOneYear(tm)
+	}
+
+	total := 0.0
+	for _, cell := range tm.Cells {
+		total += cell.Population
+	}
+
+	if math.Abs(total-3000) > 5 {
+		t.Fatalf("expected total population to approach 3000, got %.4f", total)
+	}
+}
+
 func TestPopulationModel_MigrationSummaryTracksFlowStats(t *testing.T) {
 	pm := NewPopulationModel(PopulationParameters{
 		GrowthRate:      0,

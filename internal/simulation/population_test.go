@@ -117,6 +117,27 @@ func TestPopulationModel_SeedPopulation_SkipsNonPositiveFoodAndImpassableCells(t
 	}
 }
 
+func TestPopulationModel_SeedPopulationBroadly_SpreadsAcrossViableCells(t *testing.T) {
+	pm := simulation.NewPopulationModel(simulation.PopulationParameters{MaxCellCapacity: 10})
+	tm := terrainMapWithFoodCapacities(1, 1, 1, 1, 1, 1)
+
+	allocated := pm.SeedPopulationBroadly(tm, 6)
+	if allocated != 6 {
+		t.Fatalf("unexpected seeded total: got %d, want %d", allocated, 6)
+	}
+
+	occupied := 0
+	for _, cell := range tm.Cells {
+		if cell.Population > 0 {
+			occupied++
+		}
+	}
+
+	if occupied != 6 {
+		t.Fatalf("expected broad seeding to occupy all viable cells, got %d occupied", occupied)
+	}
+}
+
 func TestPopulationModel_AdvanceOneYear_GrowsBelowCarryingCapacity(t *testing.T) {
 	pm := simulation.NewPopulationModel(simulation.PopulationParameters{
 		GrowthRate:      0.025,

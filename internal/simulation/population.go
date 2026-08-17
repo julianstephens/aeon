@@ -74,6 +74,74 @@ type seededCellRemainder struct {
 	frac      float64
 }
 
+func (pm *PopulationModel) SeedPopulationBroadly(terrainMap *simtypes.TerrainMap, population float64) int {
+	if terrainMap == nil || population <= 0 {
+		return 0
+	}
+
+	targetPopulation := int(math.Round(population))
+	if targetPopulation <= 0 {
+		return 0
+	}
+
+	seedableCells := make([]seededCell, 0, len(terrainMap.Cells))
+	for i := range terrainMap.Cells {
+		cell := &terrainMap.Cells[i]
+		cell.Population = 0
+
+		if !cell.Terrain.IsPassable() || cell.FoodCapacity <= 0 {
+			continue
+		}
+
+		capacity := int(math.Floor(pm.carryingCapacity(cell)))
+		if capacity <= 0 {
+			continue
+		}
+
+		seedableCells = append(seedableCells, seededCell{
+			index:    i,
+			weight:   cell.FoodCapacity,
+			capacity: capacity,
+		})
+	}
+
+	if len(seedableCells) == 0 {
+		return 0
+	}
+
+	sort.Slice(seedableCells, func(i, j int) bool {
+		if seedableCells[i].weight == seedableCells[j].weight {
+			return seedableCells[i].index < seedableCells[j].index
+		}
+		return seedableCells[i].weight > seedableCells[j].weight
+	})
+
+	remaining := targetPopulation
+	prefilled := 0
+	for i := range seedableCells {
+		if remaining <= 0 {
+			break
+		}
+		if seedableCells[i].capacity <= 0 {
+			continue
+		}
+		seedableCells[i].population = 1
+		remaining--
+		prefilled++
+	}
+
+	additional := 0
+	if remaining > 0 {
+		additional = distributeSeedPopulation(seedableCells, remaining)
+	}
+
+	for _, cell := range seedableCells {
+		terrainMap.Cells[cell.index].Population = float64(cell.population)
+	}
+
+	return prefilled + additional
+}
+
 func (pm *PopulationModel) SeedPopulation(terrainMap *simtypes.TerrainMap, population float64) int {
 	if terrainMap == nil || population <= 0 {
 		return 0

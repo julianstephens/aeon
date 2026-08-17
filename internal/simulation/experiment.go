@@ -143,6 +143,9 @@ func (e *Experiment) RunE() (ExperimentResult, error) {
 	})
 	requestedInitialPopulation := int(math.Round(e.config.InitialPopulation))
 	seededPopulation := populationModel.SeedPopulation(terrainMap, e.config.InitialPopulation)
+	if e.config.MigrationRate == 0 {
+		seededPopulation = populationModel.SeedPopulationBroadly(terrainMap, e.config.InitialPopulation)
+	}
 	if seededPopulation != requestedInitialPopulation {
 		metrics := CollectPopulationMetrics(terrainMap, populationModel)
 		return result, fmt.Errorf(
