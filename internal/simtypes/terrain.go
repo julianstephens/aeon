@@ -184,3 +184,14 @@ func (tm *TerrainMap) ApplyTerrain(layer *Layer) {
 		}
 	}
 }
+
+func (tm *TerrainMap) ApplyFoodCapacity(layer *Layer) {
+	for x := 0; x < tm.Width; x++ {
+		for y := 0; y < tm.Height; y++ {
+			foodCapacity := layer.Get(x, y)
+			cell := tm.GetCell(x, y)
+			cell.FoodCapacity = foodCapacity
+			tm.SetCell(x, y, *cell)
+		}
+	}
+}

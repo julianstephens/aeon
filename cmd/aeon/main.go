@@ -29,7 +29,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger.WithFields(map[string]interface{}{
+	logger.WithFields(map[string]any{
 		"seed":  seed,
 		"years": yearsNum,
 	}).Info("starting simulation run")

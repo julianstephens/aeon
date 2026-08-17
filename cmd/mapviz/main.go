@@ -126,6 +126,10 @@ func analyze(seed uint64) error {
 		"Fertility",
 		*layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 { return cell.Fertility }),
 	)
+	printScalarStats(
+		"Food Capacity",
+		*layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 { return cell.FoodCapacity }),
+	)
 	printTerrainDistribution(diagnostics, *tm)
 	printConnectedRegions(diagnostics)
 	printWorldViability(diagnostics, rules, validationErr, tm.Width*tm.Height)

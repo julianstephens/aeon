@@ -7,7 +7,7 @@ import (
 
 // Run runs the simulation for a given number of years and prints the results to the console.
 func Run(c *cliutil.Console, seed string, years int) error {
-	logger.WithFields(map[string]interface{}{
+	logger.WithFields(map[string]any{
 		"seed":  seed,
 		"years": years,
 	}).Debug("starting simulation run")
@@ -19,7 +19,7 @@ func Run(c *cliutil.Console, seed string, years int) error {
 		return err
 	}
 
-	logger.WithFields(map[string]interface{}{
+	logger.WithFields(map[string]any{
 		"year":       w.currentYear,
 		"population": w.PopulationCount(),
 	}).Debug("world initialized")

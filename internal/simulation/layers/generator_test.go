@@ -16,7 +16,7 @@ func TestGenerator_GenerateLayers_OnlyReturnsScalarLayers(t *testing.T) {
 	worldSeed := seedFromString("scalar-only-artifacts")
 	generator := layers.NewGenerator(simtypes.DefaultMapWidth, simtypes.DefaultMapHeight, rng.NewRNG(worldSeed))
 
-	artifacts, err := generator.GenerateLayers(worldSeed)
+	artifacts, err := generator.GenerateIntrinsicLayers(worldSeed)
 	if err != nil {
 		t.Fatalf("GenerateLayers returned error: %v", err)
 	}
@@ -149,7 +149,7 @@ func generateTerrainMap(t *testing.T, worldSeed [32]byte) simtypes.TerrainMap {
 	tm := simtypes.NewTerrainMap(simtypes.DefaultMapWidth, simtypes.DefaultMapHeight)
 	generator := layers.NewGenerator(tm.Width, tm.Height, rng.NewRNG(worldSeed))
 
-	artifacts, err := generator.GenerateLayers(worldSeed)
+	artifacts, err := generator.GenerateIntrinsicLayers(worldSeed)
 	if err != nil {
 		t.Fatalf("GenerateLayers returned error: %v", err)
 	}

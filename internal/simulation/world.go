@@ -32,7 +32,7 @@ type World struct {
 }
 
 func NewWorld(seed string) (*World, error) {
-	logger.WithFields(map[string]interface{}{
+	logger.WithFields(map[string]any{
 		"seed":   seed,
 		"width":  simtypes.DefaultMapWidth,
 		"height": simtypes.DefaultMapHeight,
@@ -55,7 +55,7 @@ func NewWorld(seed string) (*World, error) {
 		return nil, err
 	}
 
-	logger.WithFields(map[string]interface{}{
+	logger.WithFields(map[string]any{
 		"current_year": world.currentYear,
 		"population":   world.PopulationCount(),
 	}).Debug("world created")
@@ -150,7 +150,7 @@ func generateInitialPopulation(w *World, numAgents int) (err error) {
 		w.AddAgent(agent)
 
 		if (i+1)%25 == 0 || i+1 == numAgents {
-			logger.WithFields(map[string]interface{}{
+			logger.WithFields(map[string]any{
 				"generated": i + 1,
 				"target":    numAgents,
 			}).Debug("initial population generation progress")

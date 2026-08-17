@@ -32,7 +32,7 @@ func (p *Pipeline) Run(worldSeed [32]byte) (*simtypes.TerrainMap, error) {
 	tm := simtypes.NewTerrainMap(p.width, p.height)
 	p.classifier = NewTerrainClassifier(tm)
 
-	artifacts, err := p.generator.GenerateLayers(worldSeed)
+	artifacts, err := p.generator.GenerateIntrinsicLayers(worldSeed)
 	if err != nil {
 		return nil, err
 	}
@@ -56,6 +56,10 @@ func (p *Pipeline) Run(worldSeed [32]byte) (*simtypes.TerrainMap, error) {
 			Cause:   err,
 		}
 	}
+
+	tm.ApplyFoodCapacity(
+		p.generator.GenerateComputedLayers(tm, artifacts.Elevation, artifacts.Moisture, artifacts.Fertility),
+	)
 
 	return tm, nil
 }
