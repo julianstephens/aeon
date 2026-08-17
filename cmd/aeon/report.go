@@ -69,7 +69,7 @@ func renderExperimentText(scenario simulation.Scenario, result simulation.Experi
 			}
 
 			fmt.Fprintln(&buffer)
-			fmt.Fprintln(&buffer, "Population / carrying capacity by terrain")
+			fmt.Fprintln(&buffer, "Population / available capacity by terrain")
 			for _, terrain := range final.ByTerrain {
 				fmt.Fprintf(
 					&buffer,
@@ -82,7 +82,7 @@ func renderExperimentText(scenario simulation.Scenario, result simulation.Experi
 			}
 
 			fmt.Fprintln(&buffer)
-			fmt.Fprintln(&buffer, "Occupied capacity by terrain")
+			fmt.Fprintln(&buffer, "Occupied capacity / available capacity by terrain")
 			for _, terrain := range final.ByTerrain {
 				fmt.Fprintf(
 					&buffer,

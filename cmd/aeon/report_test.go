@@ -119,10 +119,10 @@ func TestRenderExperimentText_ContainsExpectedMetrics(t *testing.T) {
 	if !strings.Contains(output, "Final population by terrain") {
 		t.Fatalf("expected final terrain population section in text output, got %q", output)
 	}
-	if !strings.Contains(output, "Population / carrying capacity by terrain") {
+	if !strings.Contains(output, "Population / available capacity by terrain") {
 		t.Fatalf("expected terrain density section in text output, got %q", output)
 	}
-	if !strings.Contains(output, "Occupied capacity by terrain") {
+	if !strings.Contains(output, "Occupied capacity / available capacity by terrain") {
 		t.Fatalf("expected occupied capacity section in text output, got %q", output)
 	}
 }

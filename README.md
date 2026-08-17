@@ -145,9 +145,15 @@ Final population by terrain
   Mountain:  0
   Water:     0
 
-Population / carrying capacity by terrain
+Population / available capacity by terrain
   Plains:    9534 / 16182 (58.9%)
   Forest:    5643 / 11772 (47.9%)
+  Mountain:  0 / 0 (0.0%)
+  Water:     0 / 0 (0.0%)
+
+Occupied capacity / available capacity by terrain
+  Plains:    12010 / 16182 (74.2%)
+  Forest:    7789 / 11772 (66.2%)
   Mountain:  0 / 0 (0.0%)
   Water:     0 / 0 (0.0%)
 ```
