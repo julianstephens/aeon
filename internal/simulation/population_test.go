@@ -51,6 +51,31 @@ func TestPopulationModel_SeedPopulation_ClustersInitialPopulation(t *testing.T) 
 	}
 }
 
+func TestPopulationModel_SeedPopulation_ExpandsCentersToFitRequestedPopulation(t *testing.T) {
+	pm := simulation.NewPopulationModel(simulation.PopulationParameters{MaxCellCapacity: 10})
+	tm := terrainMapWithFoodCapacities(1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
+
+	allocated := pm.SeedPopulation(tm, 60)
+	if allocated != 60 {
+		t.Fatalf("unexpected seeded total: got %d, want %d", allocated, 60)
+	}
+
+	var total float64
+	occupied := 0
+	for _, cell := range tm.Cells {
+		total += cell.Population
+		if cell.Population > 0 {
+			occupied++
+		}
+	}
+	if total != 60 {
+		t.Fatalf("expected exactly 60 people to be seeded, got %.0f", total)
+	}
+	if occupied < 3 {
+		t.Fatalf("expected seeding to expand beyond the initial centers, got %d occupied cells", occupied)
+	}
+}
+
 func TestPopulationModel_SeedPopulation_RespectsTotalCapacity(t *testing.T) {
 	pm := simulation.NewPopulationModel(simulation.PopulationParameters{MaxCellCapacity: 1})
 	tm := terrainMapWithFoodCapacities(9, 1)
@@ -165,8 +190,6 @@ func TestPopulationModel_AdvanceOneYear_MigrationUsesSynchronousFlows(t *testing
 
 	pm.AdvanceOneYear(tm)
 
-	// Cell 1 receives migration during the year but cannot migrate that
-	// newly received population again in the same year.
 	if tm.Cells[1].Population != 5 {
 		t.Fatalf("expected synchronous migration to leave neighbor at 5, got %.4f", tm.Cells[1].Population)
 	}
