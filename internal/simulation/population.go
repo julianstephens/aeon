@@ -10,8 +10,6 @@ import (
 
 type PopulationParameters struct {
 	GrowthRate      float64
-	StarvationRate  float64
-	MigrationRate   float64
 	MaxCellCapacity float64
 }
 
@@ -21,9 +19,7 @@ type PopulationModel struct {
 }
 
 func NewPopulationModel(params PopulationParameters) *PopulationModel {
-	return &PopulationModel{
-		params: params,
-	}
+	return &PopulationModel{params: params}
 }
 
 func (pm *PopulationModel) SimulatePopulationDynamics(durationYears int, terrainMap *simtypes.TerrainMap) {
@@ -64,7 +60,7 @@ func (pm *PopulationModel) SeedPopulation(terrainMap *simtypes.TerrainMap, popul
 		cell := &terrainMap.Cells[i]
 		cell.Population = 0
 
-		if cell.FoodCapacity <= 0 {
+		if !cell.Terrain.IsPassable() || cell.FoodCapacity <= 0 {
 			continue
 		}
 
@@ -74,13 +70,13 @@ func (pm *PopulationModel) SeedPopulation(terrainMap *simtypes.TerrainMap, popul
 		}
 
 		seedableCells = append(seedableCells, seededCell{
-			index:      i,
-			weight:     cell.FoodCapacity,
-			capacity:   capacity,
-			population: 0,
+			index:    i,
+			weight:   cell.FoodCapacity,
+			capacity: capacity,
 		})
 	}
 
+	seedableCells = selectSeedCells(seedableCells, terrainMap, targetPopulation)
 	allocated := distributeSeedPopulation(seedableCells, targetPopulation)
 	for _, cell := range seedableCells {
 		terrainMap.Cells[cell.index].Population = float64(cell.population)
@@ -131,6 +127,59 @@ func (pm *PopulationModel) growPopulation(terrainMap *simtypes.TerrainMap) {
 	}
 }
 
+func selectSeedCells(cells []seededCell, terrainMap *simtypes.TerrainMap, population int) []seededCell {
+	if len(cells) <= 1 {
+		return cells
+	}
+
+	seedCount := min(5, max(1, int(math.Ceil(math.Sqrt(float64(population)/10)))))
+	seedCount = min(seedCount, len(cells))
+
+	sort.Slice(cells, func(i, j int) bool {
+		if cells[i].weight == cells[j].weight {
+			return cells[i].index < cells[j].index
+		}
+		return cells[i].weight > cells[j].weight
+	})
+
+	selected := make([]seededCell, 0, seedCount)
+	mapSpan := max(terrainMap.Width, terrainMap.Height)
+	minDistance := max(1, mapSpan/5)
+	for _, candidate := range cells {
+		if len(selected) == seedCount {
+			break
+		}
+
+		position := terrainMap.Cells[candidate.index].Location
+		tooClose := false
+		for _, chosen := range selected {
+			chosenPosition := terrainMap.Cells[chosen.index].Location
+			distance := abs(position.X-chosenPosition.X) + abs(position.Y-chosenPosition.Y)
+			if distance < minDistance {
+				tooClose = true
+				break
+			}
+		}
+		if tooClose {
+			continue
+		}
+
+		selected = append(selected, candidate)
+	}
+
+	if len(selected) == 0 {
+		selected = append(selected, cells[0])
+	}
+	return selected
+}
+
+func abs(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
+}
+
 func distributeSeedPopulation(cells []seededCell, targetPopulation int) int {
 	remaining := targetPopulation
 	active := make([]int, 0, len(cells))
@@ -162,7 +211,6 @@ func distributeSeedPopulation(cells []seededCell, targetPopulation int) int {
 
 			idealShare := float64(roundTarget) * (cell.weight / totalWeight)
 			base := min(int(math.Floor(idealShare)), room)
-
 			if base > 0 {
 				cell.population += base
 				remaining -= base
@@ -177,11 +225,11 @@ func distributeSeedPopulation(cells []seededCell, targetPopulation int) int {
 
 		if remaining > 0 {
 			sort.Slice(remainders, func(i, j int) bool {
-				if remainders[i].frac == remainders[j].frac {
-					return remainders[i].cellIndex < remainders[j].cellIndex
-				}
-				return remainders[i].frac > remainders[j].frac
-			})
+			if remainders[i].frac == remainders[j].frac {
+				return remainders[i].cellIndex < remainders[j].cellIndex
+			}
+			return remainders[i].frac > remainders[j].frac
+		})
 
 			for _, rem := range remainders {
 				if remaining <= 0 {
