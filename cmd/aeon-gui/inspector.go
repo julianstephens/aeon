@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"image"
 
-	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/julianstephens/aeon/internal/simulation"
 )
@@ -61,5 +60,3 @@ func printWorldStats(screen *ebiten.Image, rect image.Rectangle, snapshot simula
 	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("  Utilization   %.1f%%", snapshot.Population.Utilization*100), rect.Min.X+18, y+80)
 	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("  Occupied      %d", snapshot.Population.OccupiedCells), rect.Min.X+18, y+100)
 }
-
-var _ = ebiten.IsKeyPressed
