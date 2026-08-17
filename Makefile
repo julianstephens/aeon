@@ -4,10 +4,10 @@ default: check
 
 pack:
 	@rm -rf out && mkdir -p out
-	@go run ./cmd/mapviz/main.go -layer elevation -output out/elevation.png
-	@go run ./cmd/mapviz/main.go -layer moisture -output out/moisture.png
-	@go run ./cmd/mapviz/main.go -layer fertility -output out/fertility.png
-	@go run ./cmd/mapviz/main.go -layer terrain -output out/terrain.png
+	@go run ./cmd/mapviz/main.go render --layer elevation --output out/elevation.png
+	@go run ./cmd/mapviz/main.go render --layer moisture --output out/moisture.png
+	@go run ./cmd/mapviz/main.go render --layer fertility --output out/fertility.png
+	@go run ./cmd/mapviz/main.go render --layer terrain --output out/terrain.png
 
 
 build:
