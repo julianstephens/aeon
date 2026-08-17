@@ -9,15 +9,32 @@ import (
 )
 
 type PopulationParameters struct {
-	GrowthRate       float64
-	StarvationRate   float64
-	MigrationRate    float64
-	MaxCellCapacity  float64
+	GrowthRate      float64
+	StarvationRate  float64
+	MigrationRate   float64
+	MaxCellCapacity float64
+}
+
+type MigrationSummary struct {
+	Moved            float64
+	SourceCells      int
+	DestinationCells int
+	AverageDistance  float64
+	MaxDistance      int
+}
+
+type PopulationPressureSummary struct {
+	Under25      int
+	Range25to50  int
+	Range50to75  int
+	Range75to100 int
+	Over100      int
 }
 
 type PopulationModel struct {
-	params PopulationParameters
-	tick   int
+	params        PopulationParameters
+	tick          int
+	lastMigration MigrationSummary
 }
 
 func NewPopulationModel(params PopulationParameters) *PopulationModel {
@@ -89,6 +106,44 @@ func (pm *PopulationModel) SeedPopulation(terrainMap *simtypes.TerrainMap, popul
 
 func (pm *PopulationModel) CurrentTick() int {
 	return pm.tick
+}
+
+func (pm *PopulationModel) MigrationSummary() MigrationSummary {
+	return pm.lastMigration
+}
+
+func (pm *PopulationModel) PopulationPressureSummary(terrainMap *simtypes.TerrainMap) PopulationPressureSummary {
+	summary := PopulationPressureSummary{}
+	if terrainMap == nil {
+		return summary
+	}
+
+	for i := range terrainMap.Cells {
+		cell := &terrainMap.Cells[i]
+		capacity := pm.carryingCapacity(cell)
+		if capacity <= 0 || cell.Population <= 0 {
+			continue
+		}
+
+		pressure := 0.0
+		if capacity > 0 {
+			pressure = cell.Population / capacity * 100
+		}
+
+		switch {
+		case pressure < 25:
+			summary.Under25++
+		case pressure < 50:
+			summary.Range25to50++
+		case pressure < 75:
+			summary.Range50to75++
+		case pressure < 100:
+			summary.Range75to100++
+		default:
+			summary.Over100++
+		}
+	}
+	return summary
 }
 
 func (pm *PopulationModel) TotalPopulation(terrainMap *simtypes.TerrainMap) int {
@@ -172,13 +227,14 @@ func (pm *PopulationModel) applyStarvation(terrainMap *simtypes.TerrainMap) {
 }
 
 type migrationFlow struct {
-	from int
-	to   int
+	from   int
+	to     int
 	amount float64
 }
 
 func (pm *PopulationModel) applyMigration(terrainMap *simtypes.TerrainMap) {
 	if pm.params.MigrationRate <= 0 {
+		pm.lastMigration = MigrationSummary{}
 		return
 	}
 
@@ -186,11 +242,21 @@ func (pm *PopulationModel) applyMigration(terrainMap *simtypes.TerrainMap) {
 	for i := range terrainMap.Cells {
 		cell := &terrainMap.Cells[i]
 		capacity := pm.carryingCapacity(cell)
-		if capacity <= 0 || cell.Population <= capacity {
+		if capacity <= 0 {
 			continue
 		}
 
-		excess := cell.Population - capacity
+		migrationThreshold := capacity * 0.75
+		excess := 0.0
+		switch {
+		case cell.Population > capacity:
+			excess = cell.Population - capacity
+		case cell.Population > migrationThreshold:
+			excess = cell.Population - migrationThreshold
+		default:
+			continue
+		}
+
 		available := excess * pm.params.MigrationRate
 		if available <= 0 {
 			continue
@@ -221,10 +287,44 @@ func (pm *PopulationModel) applyMigration(terrainMap *simtypes.TerrainMap) {
 		}
 	}
 
+	pm.lastMigration = summarizeMigration(flows, terrainMap)
 	for _, flow := range flows {
 		terrainMap.Cells[flow.from].Population -= flow.amount
 		terrainMap.Cells[flow.to].Population += flow.amount
 	}
+}
+
+func summarizeMigration(flows []migrationFlow, terrainMap *simtypes.TerrainMap) MigrationSummary {
+	if len(flows) == 0 || terrainMap == nil {
+		return MigrationSummary{}
+	}
+
+	summary := MigrationSummary{Moved: 0, SourceCells: 0, DestinationCells: 0, AverageDistance: 0, MaxDistance: 0}
+	sourceSet := make(map[int]struct{}, len(flows))
+	destinationSet := make(map[int]struct{}, len(flows))
+	totalDistance := 0.0
+	maxDistance := 0
+	for _, flow := range flows {
+		summary.Moved += flow.amount
+		sourceSet[flow.from] = struct{}{}
+		destinationSet[flow.to] = struct{}{}
+
+		from := terrainMap.Cells[flow.from].Location
+		to := terrainMap.Cells[flow.to].Location
+		distance := abs(from.X-to.X) + abs(from.Y-to.Y)
+		totalDistance += float64(distance)
+		if distance > maxDistance {
+			maxDistance = distance
+		}
+	}
+
+	summary.SourceCells = len(sourceSet)
+	summary.DestinationCells = len(destinationSet)
+	summary.MaxDistance = maxDistance
+	if len(flows) > 0 {
+		summary.AverageDistance = totalDistance / float64(len(flows))
+	}
+	return summary
 }
 
 func tmNeighbors(terrainMap *simtypes.TerrainMap, index int) []int {

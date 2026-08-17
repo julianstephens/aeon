@@ -97,11 +97,17 @@ type TerrainMap struct {
 }
 
 func NewTerrainMap(width, height int) *TerrainMap {
+	cells := make([]TerrainCell, width*height)
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			cells[y*width+x] = TerrainCell{Location: Position{X: x, Y: y}}
+		}
+	}
 	return &TerrainMap{
 		initialized: false,
 		Width:       width,
 		Height:      height,
-		Cells:       make([]TerrainCell, width*height),
+		Cells:       cells,
 	}
 }
 

@@ -25,7 +25,7 @@ func Run(c *cliutil.Console, seed string, years int) error {
 		GrowthRate:      0.025,
 		StarvationRate:  0.10,
 		MigrationRate:   0.07,
-		MaxCellCapacity: 30,
+		MaxCellCapacity: 100,
 	}
 
 	w, err := NewWorld(seed, populationParams)
@@ -68,6 +68,8 @@ func shouldReportYear(year, totalYears int) bool {
 
 func printYearlyReport(year int, terrainMap *simtypes.TerrainMap, populationModel *PopulationModel) {
 	stats := summarizeTerrainPopulation(terrainMap, populationModel)
+	migration := populationModel.MigrationSummary()
+	pressure := populationModel.PopulationPressureSummary(terrainMap)
 	println(fmt.Sprintf("Year %d", year))
 	println("Population")
 	println(fmt.Sprintf("  total:              %d", stats.totalPopulation))
@@ -75,6 +77,20 @@ func printYearlyReport(year int, terrainMap *simtypes.TerrainMap, populationMode
 	println(fmt.Sprintf("  utilization:        %.1f%%", stats.utilizationPercent))
 	println(fmt.Sprintf("  occupied cells:     %d", stats.occupiedCells))
 	println(fmt.Sprintf("  over-capacity cells: %d", stats.overCapacityCells))
+	println()
+	println("Migration")
+	println(fmt.Sprintf("  moved:             %d", int(math.Round(migration.Moved))))
+	println(fmt.Sprintf("  source cells:      %d", migration.SourceCells))
+	println(fmt.Sprintf("  destination cells: %d", migration.DestinationCells))
+	println(fmt.Sprintf("  average distance:  %.1f", migration.AverageDistance))
+	println(fmt.Sprintf("  max distance:      %d", migration.MaxDistance))
+	println()
+	println("Population pressure")
+	println(fmt.Sprintf("  under 25%%:         %d cells", pressure.Under25))
+	println(fmt.Sprintf("  25–50%%:           %d cells", pressure.Range25to50))
+	println(fmt.Sprintf("  50–75%%:           %d cells", pressure.Range50to75))
+	println(fmt.Sprintf("  75–100%%:          %d cells", pressure.Range75to100))
+	println(fmt.Sprintf("  >100%%:            %d cells", pressure.Over100))
 }
 
 type terrainPopulationSummary struct {
@@ -85,7 +101,10 @@ type terrainPopulationSummary struct {
 	overCapacityCells  int
 }
 
-func summarizeTerrainPopulation(terrainMap *simtypes.TerrainMap, populationModel *PopulationModel) terrainPopulationSummary {
+func summarizeTerrainPopulation(
+	terrainMap *simtypes.TerrainMap,
+	populationModel *PopulationModel,
+) terrainPopulationSummary {
 	if terrainMap == nil || populationModel == nil {
 		return terrainPopulationSummary{}
 	}

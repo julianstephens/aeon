@@ -135,6 +135,8 @@ func TestPopulationModel_AdvanceOneYear_MigratesExcessPopulationToNeighbor(t *te
 	})
 	tm := terrainMapWithFoodCapacities(1, 1, 1)
 	tm.Cells[0].Population = 20
+	tm.Cells[1].Population = 0
+	tm.Cells[2].Population = 0
 
 	pm.AdvanceOneYear(tm)
 
@@ -158,6 +160,8 @@ func TestPopulationModel_AdvanceOneYear_MigrationUsesSynchronousFlows(t *testing
 	})
 	tm := terrainMapWithFoodCapacities(1, 1, 1)
 	tm.Cells[0].Population = 20
+	tm.Cells[1].Population = 0
+	tm.Cells[2].Population = 0
 
 	pm.AdvanceOneYear(tm)
 
@@ -174,7 +178,7 @@ func terrainMapWithFoodCapacities(foodCapacities ...float64) *simtypes.TerrainMa
 		tm.Cells[i].Location = simtypes.Position{X: i, Y: 0}
 		tm.Cells[i].Terrain = simtypes.TerrainTypePlains
 		tm.Cells[i].FoodCapacity = capacity
-		tm.Cells[i].Population = 99
+		tm.Cells[i].Population = 0
 	}
 	return tm
 }

@@ -107,6 +107,80 @@ func TestPopulationModel_GrowPopulation_RemainsDeterministic(t *testing.T) {
 	}
 }
 
+func TestPopulationModel_MigrationSummaryTracksFlowStats(t *testing.T) {
+	pm := NewPopulationModel(PopulationParameters{
+		GrowthRate:      0,
+		StarvationRate:  0,
+		MigrationRate:   0.5,
+		MaxCellCapacity: 10,
+	})
+	terrain := simtypes.NewTerrainMap(3, 1)
+	for i := range terrain.Cells {
+		terrain.Cells[i].Location = simtypes.Position{X: i, Y: 0}
+		terrain.Cells[i].Terrain = simtypes.TerrainTypePlains
+		terrain.Cells[i].FoodCapacity = 1
+	}
+	terrain.Cells[0].Population = 20
+	terrain.Cells[1].Population = 0
+	terrain.Cells[2].Population = 0
+
+	pm.AdvanceOneYear(terrain)
+	summary := pm.MigrationSummary()
+
+	if summary.Moved != 5 {
+		t.Fatalf("expected 5 migrated people, got %.0f", summary.Moved)
+	}
+	if summary.SourceCells != 1 {
+		t.Fatalf("expected 1 source cell, got %d", summary.SourceCells)
+	}
+	if summary.DestinationCells != 1 {
+		t.Fatalf("expected 1 destination cell, got %d", summary.DestinationCells)
+	}
+	if summary.AverageDistance != 1.0 {
+		t.Fatalf("expected average distance 1.0, got %.1f", summary.AverageDistance)
+	}
+	if summary.MaxDistance != 1 {
+		t.Fatalf("expected max distance 1, got %d", summary.MaxDistance)
+	}
+}
+
+func TestPopulationModel_PopulationPressureSummary_ClassifiesCellsByUtilization(t *testing.T) {
+	pm := NewPopulationModel(PopulationParameters{MaxCellCapacity: 10})
+	terrain := simtypes.NewTerrainMap(5, 1)
+	for i := range terrain.Cells {
+		terrain.Cells[i].Location = simtypes.Position{X: i, Y: 0}
+		terrain.Cells[i].Terrain = simtypes.TerrainTypePlains
+		terrain.Cells[i].FoodCapacity = 1
+	}
+	terrain.Cells[0].Population = 2  // 20%
+	terrain.Cells[1].Population = 3  // 30%
+	terrain.Cells[2].Population = 6  // 60%
+	terrain.Cells[3].Population = 8  // 80%
+	terrain.Cells[4].Population = 15 // 150%
+
+	summary := pm.PopulationPressureSummary(terrain)
+	if summary.Under25 != 1 || summary.Range25to50 != 1 || summary.Range50to75 != 1 || summary.Range75to100 != 1 ||
+		summary.Over100 != 1 {
+		t.Fatalf("unexpected pressure buckets: %+v", summary)
+	}
+}
+
+func TestTerrainMap_CreatesCellCoordinatesForPopulationModel(t *testing.T) {
+	tm := simtypes.NewTerrainMap(3, 2)
+	if tm.Cells[0].Location != (simtypes.Position{X: 0, Y: 0}) {
+		t.Fatalf("expected top-left cell location to be (0,0), got %#v", tm.Cells[0].Location)
+	}
+	if tm.Cells[1].Location != (simtypes.Position{X: 1, Y: 0}) {
+		t.Fatalf("expected (1,0) cell coordinates, got %#v", tm.Cells[1].Location)
+	}
+	if tm.Cells[3].Location != (simtypes.Position{X: 0, Y: 1}) {
+		t.Fatalf("expected (0,1) cell coordinates, got %#v", tm.Cells[3].Location)
+	}
+	if tm.Cells[5].Location != (simtypes.Position{X: 2, Y: 1}) {
+		t.Fatalf("expected bottom-right cell location to be (2,1), got %#v", tm.Cells[5].Location)
+	}
+}
+
 func terrainMapWithPopulation(foodCapacity, population float64) *simtypes.TerrainMap {
 	return terrainMapWithPopulationSet([]float64{foodCapacity}, []float64{population})
 }
