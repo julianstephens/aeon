@@ -107,6 +107,47 @@ func TestPopulationModel_GrowPopulation_RemainsDeterministic(t *testing.T) {
 	}
 }
 
+func TestPopulationModel_IsolatedSingleCell_ApproachesLocalCapacity(t *testing.T) {
+	pm := NewPopulationModel(PopulationParameters{
+		GrowthRate:      0.2,
+		StarvationRate:  0,
+		MigrationRate:   0,
+		MaxCellCapacity: 10,
+	})
+	tm := terrainMapWithPopulation(100, 500)
+
+	for i := 0; i < 200; i++ {
+		pm.AdvanceOneYear(tm)
+	}
+
+	finalPopulation := tm.Cells[0].Population
+	if math.Abs(finalPopulation-1000) > 0.1 {
+		t.Fatalf("expected isolated cell population to approach 1000, got %.4f", finalPopulation)
+	}
+}
+
+func TestPopulationModel_IsolatedIndependentCells_ApproachSumOfLocalCapacities(t *testing.T) {
+	pm := NewPopulationModel(PopulationParameters{
+		GrowthRate:      0.2,
+		StarvationRate:  0,
+		MigrationRate:   0,
+		MaxCellCapacity: 10,
+	})
+	tm := terrainMapWithPopulationSet(
+		[]float64{100, 50, 25},
+		[]float64{500, 250, 125},
+	)
+
+	for i := 0; i < 220; i++ {
+		pm.AdvanceOneYear(tm)
+	}
+
+	total := tm.Cells[0].Population + tm.Cells[1].Population + tm.Cells[2].Population
+	if math.Abs(total-1750) > 0.2 {
+		t.Fatalf("expected total population to approach 1750, got %.4f", total)
+	}
+}
+
 func TestPopulationModel_MigrationSummaryTracksFlowStats(t *testing.T) {
 	pm := NewPopulationModel(PopulationParameters{
 		GrowthRate:      0,

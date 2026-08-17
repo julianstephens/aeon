@@ -55,6 +55,45 @@ func renderExperimentText(scenario simulation.Scenario, result simulation.Experi
 		fmt.Fprintf(&buffer, "  occupied cells:\t%d\n", final.OccupiedCells)
 		fmt.Fprintf(&buffer, "  starvation deaths:\t%s\n", formatRounded(totalDeaths))
 		fmt.Fprintf(&buffer, "  migrated population:\t%s\n", formatRounded(totalMigrated))
+
+		if len(final.ByTerrain) > 0 {
+			fmt.Fprintln(&buffer)
+			fmt.Fprintln(&buffer, "Final population by terrain")
+			for _, terrain := range final.ByTerrain {
+				fmt.Fprintf(
+					&buffer,
+					"  %s:\t%s\n",
+					terrain.Terrain,
+					formatRounded(terrain.Population),
+				)
+			}
+
+			fmt.Fprintln(&buffer)
+			fmt.Fprintln(&buffer, "Population / carrying capacity by terrain")
+			for _, terrain := range final.ByTerrain {
+				fmt.Fprintf(
+					&buffer,
+					"  %s:\t%s / %s (%.1f%%)\n",
+					terrain.Terrain,
+					formatRounded(terrain.Population),
+					formatRounded(terrain.CarryingCapacity),
+					terrain.Utilization*100,
+				)
+			}
+
+			fmt.Fprintln(&buffer)
+			fmt.Fprintln(&buffer, "Occupied capacity by terrain")
+			for _, terrain := range final.ByTerrain {
+				fmt.Fprintf(
+					&buffer,
+					"  %s:\t%s / %s (%.1f%%)\n",
+					terrain.Terrain,
+					formatRounded(terrain.OccupiedCapacity),
+					formatRounded(terrain.CarryingCapacity),
+					terrain.OccupiedRatio*100,
+				)
+			}
+		}
 	}
 
 	return buffer.String()

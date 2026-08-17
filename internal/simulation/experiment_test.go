@@ -2,6 +2,7 @@ package simulation
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -130,6 +131,24 @@ func TestExperimentRun_DifferentSeedsProduceDifferentWorlds(t *testing.T) {
 
 	if reflect.DeepEqual(first.Samples, second.Samples) {
 		t.Fatalf("expected different samples for different seeds, got identical results")
+	}
+}
+
+func TestExperimentRun_FailsWhenInitialPopulationCannotBeSeeded(t *testing.T) {
+	config := DefaultExperimentConfig()
+	config.Seed = "experiment-insufficient-capacity"
+	config.Years = 10
+	config.Interval = 5
+	config.MaxCellCapacity = 1
+	config.InitialPopulation = 50000
+
+	_, err := NewExperiment(config).RunE()
+	if err == nil {
+		t.Fatal("expected RunE to fail when initial population exceeds available capacity")
+	}
+
+	if !strings.Contains(err.Error(), "failed to seed requested initial population") {
+		t.Fatalf("unexpected error message: %v", err)
 	}
 }
 

@@ -17,7 +17,47 @@ func TestRenderExperimentText_ContainsExpectedMetrics(t *testing.T) {
 			Interval:          25,
 		},
 		Samples: []simulation.PopulationSample{
-			{Year: 0, Population: 1000, CarryingCapacity: 8000, Utilization: 0.125, OccupiedCells: 20},
+			{
+				Year:             0,
+				Population:       1000,
+				CarryingCapacity: 8000,
+				Utilization:      0.125,
+				OccupiedCells:    20,
+				ByTerrain: []simulation.TerrainPopulationSample{
+					{
+						Terrain:          "Plains",
+						Population:       300,
+						CarryingCapacity: 2500,
+						Utilization:      0.12,
+						OccupiedCapacity: 900,
+						OccupiedRatio:    0.36,
+					},
+					{
+						Terrain:          "Forest",
+						Population:       700,
+						CarryingCapacity: 5500,
+						Utilization:      0.1272727,
+						OccupiedCapacity: 2200,
+						OccupiedRatio:    0.4,
+					},
+					{
+						Terrain:          "Mountain",
+						Population:       0,
+						CarryingCapacity: 0,
+						Utilization:      0,
+						OccupiedCapacity: 0,
+						OccupiedRatio:    0,
+					},
+					{
+						Terrain:          "Water",
+						Population:       0,
+						CarryingCapacity: 0,
+						Utilization:      0,
+						OccupiedCapacity: 0,
+						OccupiedRatio:    0,
+					},
+				},
+			},
 			{
 				Year:               25,
 				Population:         1100,
@@ -26,6 +66,40 @@ func TestRenderExperimentText_ContainsExpectedMetrics(t *testing.T) {
 				OccupiedCells:      24,
 				MigratedPopulation: 41,
 				StarvationDeaths:   3,
+				ByTerrain: []simulation.TerrainPopulationSample{
+					{
+						Terrain:          "Plains",
+						Population:       400,
+						CarryingCapacity: 2500,
+						Utilization:      0.16,
+						OccupiedCapacity: 1000,
+						OccupiedRatio:    0.4,
+					},
+					{
+						Terrain:          "Forest",
+						Population:       700,
+						CarryingCapacity: 5500,
+						Utilization:      0.1272727,
+						OccupiedCapacity: 2300,
+						OccupiedRatio:    0.4181818,
+					},
+					{
+						Terrain:          "Mountain",
+						Population:       0,
+						CarryingCapacity: 0,
+						Utilization:      0,
+						OccupiedCapacity: 0,
+						OccupiedRatio:    0,
+					},
+					{
+						Terrain:          "Water",
+						Population:       0,
+						CarryingCapacity: 0,
+						Utilization:      0,
+						OccupiedCapacity: 0,
+						OccupiedRatio:    0,
+					},
+				},
 			},
 		},
 	}
@@ -41,6 +115,15 @@ func TestRenderExperimentText_ContainsExpectedMetrics(t *testing.T) {
 	}
 	if !strings.Contains(output, "Final") {
 		t.Fatalf("expected final summary in text output, got %q", output)
+	}
+	if !strings.Contains(output, "Final population by terrain") {
+		t.Fatalf("expected final terrain population section in text output, got %q", output)
+	}
+	if !strings.Contains(output, "Population / carrying capacity by terrain") {
+		t.Fatalf("expected terrain density section in text output, got %q", output)
+	}
+	if !strings.Contains(output, "Occupied capacity by terrain") {
+		t.Fatalf("expected occupied capacity section in text output, got %q", output)
 	}
 }
 

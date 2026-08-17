@@ -9,6 +9,16 @@ type PopulationMetrics struct {
 	OccupiedCells     int
 	OverCapacityCells int
 	Pressure          PopulationPressureSummary
+	ByTerrain         []TerrainPopulationMetrics
+}
+
+type TerrainPopulationMetrics struct {
+	Terrain          string
+	Population       float64
+	CarryingCapacity float64
+	Utilization      float64
+	OccupiedCapacity float64
+	OccupiedRatio    float64
 }
 
 func CollectPopulationMetrics(terrainMap *simtypes.TerrainMap, pm *PopulationModel) PopulationMetrics {
@@ -17,11 +27,27 @@ func CollectPopulationMetrics(terrainMap *simtypes.TerrainMap, pm *PopulationMod
 		return metrics
 	}
 
+	metrics.ByTerrain = []TerrainPopulationMetrics{
+		{Terrain: simtypes.TerrainTypePlains.String()},
+		{Terrain: simtypes.TerrainTypeForest.String()},
+		{Terrain: simtypes.TerrainTypeMountain.String()},
+		{Terrain: simtypes.TerrainTypeWater.String()},
+	}
+
 	for i := range terrainMap.Cells {
 		cell := &terrainMap.Cells[i]
 		cellCapacity := pm.carryingCapacity(cell)
 		metrics.Population += cell.Population
 		metrics.CarryingCapacity += cellCapacity
+
+		if cell.Terrain >= simtypes.TerrainTypePlains && cell.Terrain <= simtypes.TerrainTypeWater {
+			idx := int(cell.Terrain)
+			metrics.ByTerrain[idx].Population += cell.Population
+			metrics.ByTerrain[idx].CarryingCapacity += cellCapacity
+			if cell.Population > 0 {
+				metrics.ByTerrain[idx].OccupiedCapacity += cellCapacity
+			}
+		}
 
 		if cell.Population <= 0 {
 			continue
@@ -53,6 +79,15 @@ func CollectPopulationMetrics(terrainMap *simtypes.TerrainMap, pm *PopulationMod
 
 	if metrics.CarryingCapacity > 0 {
 		metrics.Utilization = metrics.Population / metrics.CarryingCapacity
+	}
+
+	for i := range metrics.ByTerrain {
+		if metrics.ByTerrain[i].CarryingCapacity > 0 {
+			metrics.ByTerrain[i].Utilization =
+				metrics.ByTerrain[i].Population / metrics.ByTerrain[i].CarryingCapacity
+			metrics.ByTerrain[i].OccupiedRatio =
+				metrics.ByTerrain[i].OccupiedCapacity / metrics.ByTerrain[i].CarryingCapacity
+		}
 	}
 
 	return metrics

@@ -3,6 +3,7 @@ package simulation
 import (
 	"crypto/sha256"
 	"fmt"
+	"math"
 
 	"github.com/julianstephens/aeon/internal/simtypes"
 	"github.com/julianstephens/aeon/internal/simulation/layers"
@@ -41,12 +42,13 @@ type ExperimentResult struct {
 }
 
 type PopulationSample struct {
-	Year              int     `json:"year"`
-	Population        float64 `json:"population"`
-	CarryingCapacity  float64 `json:"carrying_capacity"`
-	Utilization       float64 `json:"utilization"`
-	OccupiedCells     int     `json:"occupied_cells"`
-	OverCapacityCells int     `json:"over_capacity_cells"`
+	Year              int                       `json:"year"`
+	Population        float64                   `json:"population"`
+	CarryingCapacity  float64                   `json:"carrying_capacity"`
+	Utilization       float64                   `json:"utilization"`
+	OccupiedCells     int                       `json:"occupied_cells"`
+	OverCapacityCells int                       `json:"over_capacity_cells"`
+	ByTerrain         []TerrainPopulationSample `json:"population_by_terrain"`
 
 	MigratedPopulation float64 `json:"migrated_population"`
 	SourceCells        int     `json:"source_cells"`
@@ -55,6 +57,15 @@ type PopulationSample struct {
 	MaxDistance        int     `json:"max_distance"`
 
 	StarvationDeaths float64 `json:"starvation_deaths"`
+}
+
+type TerrainPopulationSample struct {
+	Terrain          string  `json:"terrain"`
+	Population       float64 `json:"population"`
+	CarryingCapacity float64 `json:"carrying_capacity"`
+	Utilization      float64 `json:"utilization"`
+	OccupiedCapacity float64 `json:"occupied_capacity"`
+	OccupiedRatio    float64 `json:"occupied_ratio"`
 }
 
 type intervalAccumulator struct {
@@ -130,7 +141,17 @@ func (e *Experiment) RunE() (ExperimentResult, error) {
 		MigrationRate:   e.config.MigrationRate,
 		MaxCellCapacity: e.config.MaxCellCapacity,
 	})
-	populationModel.SeedPopulation(terrainMap, e.config.InitialPopulation)
+	requestedInitialPopulation := int(math.Round(e.config.InitialPopulation))
+	seededPopulation := populationModel.SeedPopulation(terrainMap, e.config.InitialPopulation)
+	if seededPopulation != requestedInitialPopulation {
+		metrics := CollectPopulationMetrics(terrainMap, populationModel)
+		return result, fmt.Errorf(
+			"failed to seed requested initial population: requested %d, seeded %d (estimated carrying capacity %.0f)",
+			requestedInitialPopulation,
+			seededPopulation,
+			metrics.CarryingCapacity,
+		)
+	}
 
 	result.Samples = append(
 		result.Samples,
@@ -189,6 +210,7 @@ func buildPopulationSample(
 		Utilization:        metrics.Utilization,
 		OccupiedCells:      metrics.OccupiedCells,
 		OverCapacityCells:  metrics.OverCapacityCells,
+		ByTerrain:          toTerrainPopulationSamples(metrics.ByTerrain),
 		MigratedPopulation: acc.migratedPopulation,
 		SourceCells:        acc.sourceCells,
 		DestinationCells:   acc.destinationCells,
@@ -207,4 +229,19 @@ func (acc *intervalAccumulator) addTick(tick PopulationTickResult) {
 		acc.maxDistance = tick.MaxDistance
 	}
 	acc.starvationDeaths += tick.StarvationDeaths
+}
+
+func toTerrainPopulationSamples(metrics []TerrainPopulationMetrics) []TerrainPopulationSample {
+	samples := make([]TerrainPopulationSample, 0, len(metrics))
+	for _, metric := range metrics {
+		samples = append(samples, TerrainPopulationSample{
+			Terrain:          metric.Terrain,
+			Population:       metric.Population,
+			CarryingCapacity: metric.CarryingCapacity,
+			Utilization:      metric.Utilization,
+			OccupiedCapacity: metric.OccupiedCapacity,
+			OccupiedRatio:    metric.OccupiedRatio,
+		})
+	}
+	return samples
 }

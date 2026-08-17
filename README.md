@@ -131,6 +131,25 @@ Year  Population  Capacity  Util.  Cells  Migrants  Deaths
 50    12168       27954     43.5%  1793   2702      0
 75    13732       27954     49.1%  1835   2782      0
 100   15177       27954     54.3%  1978   3285      0
+
+Final
+  population:           15177
+  utilization:          54.3%
+  occupied cells:       1978
+  starvation deaths:    0
+  migrated population:  11949
+
+Final population by terrain
+  Plains:    9534
+  Forest:    5643
+  Mountain:  0
+  Water:     0
+
+Population / carrying capacity by terrain
+  Plains:    9534 / 16182 (58.9%)
+  Forest:    5643 / 11772 (47.9%)
+  Mountain:  0 / 0 (0.0%)
+  Water:     0 / 0 (0.0%)
 ```
 
 Run the same experiment in JSON mode:
