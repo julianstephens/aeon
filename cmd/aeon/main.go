@@ -11,9 +11,9 @@ import (
 )
 
 type CLI struct {
-	Seed     string `help:"Seed for world generation." default:"default_world_001"`
+	Seed     string `help:"Seed for world generation."   default:"default_world_001"`
 	Years    int    `help:"Number of years to simulate." default:"1"`
-	LogLevel string `help:"Log level." default:"info" env:"AEON_LOG_LEVEL"`
+	LogLevel string `help:"Log level."                   default:"info"              env:"AEON_LOG_LEVEL"`
 }
 
 func main() {

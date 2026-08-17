@@ -225,11 +225,11 @@ func distributeSeedPopulation(cells []seededCell, targetPopulation int) int {
 
 		if remaining > 0 {
 			sort.Slice(remainders, func(i, j int) bool {
-			if remainders[i].frac == remainders[j].frac {
-				return remainders[i].cellIndex < remainders[j].cellIndex
-			}
-			return remainders[i].frac > remainders[j].frac
-		})
+				if remainders[i].frac == remainders[j].frac {
+					return remainders[i].cellIndex < remainders[j].cellIndex
+				}
+				return remainders[i].frac > remainders[j].frac
+			})
 
 			for _, rem := range remainders {
 				if remaining <= 0 {

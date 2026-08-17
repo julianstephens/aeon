@@ -89,7 +89,7 @@ func summarizeTerrainPopulation(terrainMap *simtypes.TerrainMap, maxCellCapacity
 	var totalPopulation float64
 	var totalCarryingCapacity float64
 	occupiedCells := 0
-overCapacityCells := 0
+	overCapacityCells := 0
 
 	for _, cell := range terrainMap.Cells {
 		cellCapacity := cell.FoodCapacity * maxCellCapacity
