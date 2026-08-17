@@ -439,18 +439,9 @@ func generateTerrainMap(seed uint64) (*simtypes.TerrainMap, *simtypes.Layer, err
 		return nil, nil, err
 	}
 
-	generator := layers.NewGenerator(tm.Width, tm.Height, random)
-	artifacts, err := generator.GenerateLayers(seedBytes, tm)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	tm.ApplyElevation(artifacts.Elevation)
-	tm.ApplyMoisture(artifacts.Moisture)
-	tm.ApplyFertility(artifacts.Fertility)
-	tm.ApplyTerrain(artifacts.Terrain)
-
-	return tm, artifacts.Elevation, nil
+	return tm, layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 {
+		return cell.Elevation
+	}), nil
 }
 
 func renderLayer(tm simtypes.TerrainMap, elevation *simtypes.Layer, layer LayerType, scale int) (image.Image, error) {
@@ -458,13 +449,21 @@ func renderLayer(tm simtypes.TerrainMap, elevation *simtypes.Layer, layer LayerT
 	case LayerTypeTerrain:
 		return renderTerrainMap(tm, scale), nil
 	case LayerTypeElevation:
-		return renderScalarLayer(tm.Width, tm.Height, scale, func(x, y int) float64 { return elevation.Get(x, y) }), nil
+		return renderScalarLayer(tm.Width, tm.Height, scale, func(x, y int) float64 {
+			return elevation.Get(x, y)
+		}), nil
 	case LayerTypeMoisture:
-		return renderScalarLayer(tm.Width, tm.Height, scale, func(x, y int) float64 { return tm.GetCell(x, y).Moisture }), nil
+		return renderScalarLayer(tm.Width, tm.Height, scale, func(x, y int) float64 {
+			return tm.GetCell(x, y).Moisture
+		}), nil
 	case LayerTypeFertility:
-		return renderScalarLayer(tm.Width, tm.Height, scale, func(x, y int) float64 { return tm.GetCell(x, y).Fertility }), nil
+		return renderScalarLayer(tm.Width, tm.Height, scale, func(x, y int) float64 {
+			return tm.GetCell(x, y).Fertility
+		}), nil
 	case LayerTypeFoodCapacity:
-		return renderScalarLayer(tm.Width, tm.Height, scale, func(x, y int) float64 { return tm.GetCell(x, y).FoodCapacity }), nil
+		return renderScalarLayer(tm.Width, tm.Height, scale, func(x, y int) float64 {
+			return tm.GetCell(x, y).FoodCapacity
+		}), nil
 	default:
 		return nil, fmt.Errorf("unsupported layer %q", layer)
 	}
@@ -472,19 +471,24 @@ func renderLayer(tm simtypes.TerrainMap, elevation *simtypes.Layer, layer LayerT
 
 func renderTerrainMap(tm simtypes.TerrainMap, scale int) image.Image {
 	img := image.NewRGBA(image.Rect(0, 0, tm.Width*scale, tm.Height*scale))
+
 	for y := 0; y < tm.Height; y++ {
 		for x := 0; x < tm.Width; x++ {
-			if cell := tm.GetCell(x, y); cell != nil {
-				fillCell(img, x, y, scale, terrainColor(cell.Terrain))
+			cell := tm.GetCell(x, y)
+			if cell == nil {
+				continue
 			}
+			fillCell(img, x, y, scale, terrainColor(cell.Terrain))
 		}
 	}
+
 	return img
 }
 
 func renderScalarLayer(width, height, scale int, valueAt func(x, y int) float64) image.Image {
 	img := image.NewGray(image.Rect(0, 0, width*scale, height*scale))
 	minValue, maxValue := math.Inf(1), math.Inf(-1)
+
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			value := valueAt(x, y)
@@ -492,12 +496,14 @@ func renderScalarLayer(width, height, scale int, valueAt func(x, y int) float64)
 			maxValue = maxFloat(maxValue, value)
 		}
 	}
+
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			value := normalizeToRange(valueAt(x, y), minValue, maxValue)
 			fillCell(img, x, y, scale, color.Gray{Y: uint8(value * 255)})
 		}
 	}
+
 	return img
 }
 
@@ -528,6 +534,7 @@ func normalizeToRange(value, minValue, maxValue float64) float64 {
 	if maxValue <= minValue {
 		return 0.5
 	}
+
 	normalized := (value - minValue) / (maxValue - minValue)
 	if normalized < 0 {
 		return 0
@@ -536,20 +543,6 @@ func normalizeToRange(value, minValue, maxValue float64) float64 {
 		return 1
 	}
 	return normalized
-}
-
-func sanitizeOutputPath(raw string) (string, error) {
-	cleaned := filepath.Clean(raw)
-	if cleaned == "" || cleaned == "." {
-		return "", fmt.Errorf("output path is empty")
-	}
-	if filepath.IsAbs(cleaned) {
-		return "", fmt.Errorf("absolute output paths are not allowed")
-	}
-	if filepath.Ext(cleaned) != ".png" {
-		return "", fmt.Errorf("output file must use .png extension")
-	}
-	return cleaned, nil
 }
 
 func minFloat(a, b float64) float64 {
