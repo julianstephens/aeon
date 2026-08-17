@@ -19,9 +19,7 @@ type PopulationModel struct {
 }
 
 func NewPopulationModel(params PopulationParameters) *PopulationModel {
-	return &PopulationModel{
-		params: params,
-	}
+	return &PopulationModel{params: params}
 }
 
 func (pm *PopulationModel) SimulatePopulationDynamics(durationYears int, terrainMap *simtypes.TerrainMap) {
@@ -145,7 +143,8 @@ func selectSeedCells(cells []seededCell, terrainMap *simtypes.TerrainMap, popula
 	})
 
 	selected := make([]seededCell, 0, seedCount)
-	minDistance := max(1, min(terrainMap.Width, terrainMap.Height)/8)
+	mapSpan := max(terrainMap.Width, terrainMap.Height)
+	minDistance := max(1, mapSpan/5)
 	for _, candidate := range cells {
 		if len(selected) == seedCount {
 			break
@@ -212,7 +211,6 @@ func distributeSeedPopulation(cells []seededCell, targetPopulation int) int {
 
 			idealShare := float64(roundTarget) * (cell.weight / totalWeight)
 			base := min(int(math.Floor(idealShare)), room)
-
 			if base > 0 {
 				cell.population += base
 				remaining -= base
@@ -233,33 +231,33 @@ func distributeSeedPopulation(cells []seededCell, targetPopulation int) int {
 			return remainders[i].frac > remainders[j].frac
 		})
 
-		for _, rem := range remainders {
-			if remaining <= 0 {
-				break
+			for _, rem := range remainders {
+				if remaining <= 0 {
+					break
+				}
+
+				cell := &cells[rem.cellIndex]
+				if cell.population >= cell.capacity {
+					continue
+				}
+
+				cell.population++
+				remaining--
+				assignedThisRound++
 			}
+		}
 
-			cell := &cells[rem.cellIndex]
-			if cell.population >= cell.capacity {
-				continue
+		nextActive := active[:0]
+		for _, idx := range active {
+			if cells[idx].population < cells[idx].capacity {
+				nextActive = append(nextActive, idx)
 			}
-
-			cell.population++
-			remaining--
-			assignedThisRound++
 		}
-	}
+		active = nextActive
 
-	nextActive := active[:0]
-	for _, idx := range active {
-		if cells[idx].population < cells[idx].capacity {
-			nextActive = append(nextActive, idx)
+		if assignedThisRound == 0 {
+			break
 		}
-	}
-	active = nextActive
-
-	if assignedThisRound == 0 {
-		break
-	}
 	}
 
 	return targetPopulation - remaining
