@@ -66,12 +66,9 @@ func drawMap(screen *ebiten.Image, snapshot simulation.SimulationSnapshot, mode 
 	if selected != nil {
 		cellX := viewport.Min.X + int(float64(selected.X)*cellW)
 		cellY := viewport.Min.Y + int(float64(selected.Y)*cellH)
-		outline := ebiten.NewImage(int(cellW)+2, int(cellH)+2)
-		outline.Fill(color.RGBA{255, 255, 255, 255})
-		if cellX >= viewport.Min.X && cellX+int(cellW) <= viewport.Max.X && cellY >= viewport.Min.Y && cellY+int(cellH) <= viewport.Max.Y {
-			outlineOpts := &ebiten.DrawImageOptions{}
-			outlineOpts.GeoM.Translate(float64(cellX-1), float64(cellY-1))
-			screen.DrawImage(outline, outlineOpts)
+		outlineRect := image.Rect(cellX, cellY, cellX+int(cellW), cellY+int(cellH))
+		if pointInRect(cellX, cellY, viewport) && pointInRect(cellX+int(cellW)-1, cellY+int(cellH)-1, viewport) {
+			drawBorderRect(screen, outlineRect, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 2)
 		}
 	}
 	label := "World"
@@ -93,39 +90,37 @@ func colorForCell(snapshot simulation.SimulationSnapshot, index int, mode LayerM
 			return color.RGBA{R: 40, G: 40, B: 40, A: 255}
 		}
 	}
+
 	var value float64
+	var normalized []float64
 	switch mode {
 	case LayerElevation:
-		value = snapshot.TerrainMap.Elevation[index]
+		normalized = normalizeMinMax(snapshot.TerrainMap.Elevation)
+		value = normalized[index]
 	case LayerMoisture:
-		value = snapshot.TerrainMap.Moisture[index]
+		normalized = normalizeMinMax(snapshot.TerrainMap.Moisture)
+		value = normalized[index]
 	case LayerFertility:
-		value = snapshot.TerrainMap.Fertility[index]
+		normalized = normalizeMinMax(snapshot.TerrainMap.Fertility)
+		value = normalized[index]
 	case LayerFood:
-		value = snapshot.TerrainMap.Food[index]
+		normalized = normalizeMinMax(snapshot.TerrainMap.Food)
+		value = normalized[index]
 	case LayerPopulation:
-		value = snapshot.Population.Population[index]
 		if maxPop <= 0 {
 			return color.RGBA{R: 20, G: 20, B: 20, A: 255}
 		}
-		value = value / maxPop
+		value = snapshot.Population.Population[index] / maxPop
 		if value <= 0 {
 			return color.RGBA{R: 12, G: 12, B: 12, A: 255}
 		}
-		if value > 1 {
-			value = 1
-		}
+		value = clamp01(value)
 		v := uint8(20 + 235*value)
 		return color.RGBA{R: v, G: v, B: v, A: 255}
 	default:
 		value = 0
 	}
-	if value < 0 {
-		value = 0
-	}
-	if value > 1 {
-		value = 1
-	}
+	value = clamp01(value)
 	v := uint8(20 + 235*value)
 	return color.RGBA{R: v, G: v, B: v, A: 255}
 }

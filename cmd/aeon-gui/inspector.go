@@ -12,6 +12,8 @@ import (
 func drawInspector(screen *ebiten.Image, rect image.Rectangle, snapshot simulation.SimulationSnapshot, selected *CellSelection) {
 	if selected == nil {
 		ebitenutil.DebugPrintAt(screen, "Click a cell to inspect it.", rect.Min.X+12, rect.Min.Y+16)
+		ebitenutil.DebugPrintAt(screen, "", rect.Min.X+12, rect.Min.Y+40)
+		printWorldStats(screen, rect, snapshot)
 		return
 	}
 	cellX := selected.X
@@ -39,4 +41,15 @@ func drawInspector(screen *ebiten.Image, rect image.Rectangle, snapshot simulati
 	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("  Population %.1f", cellPop), rect.Min.X+12, rect.Min.Y+228)
 	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("  Capacity   %.1f", cellCap), rect.Min.X+12, rect.Min.Y+248)
 	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("  Pressure   %.1f%%", pressure), rect.Min.X+12, rect.Min.Y+268)
+	printWorldStats(screen, rect, snapshot)
+}
+
+func printWorldStats(screen *ebiten.Image, rect image.Rectangle, snapshot simulation.SimulationSnapshot) {
+	y := rect.Min.Y + 320
+	ebitenutil.DebugPrintAt(screen, "Summary", rect.Min.X+12, y)
+	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("  Year:         %d", snapshot.Year), rect.Min.X+12, y+20)
+	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("  Population:   %.0f", snapshot.Population.TotalPopulation), rect.Min.X+12, y+40)
+	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("  Capacity:     %.0f", totalCapacity(snapshot.Population.CarryingCapacity)), rect.Min.X+12, y+60)
+	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("  Utilization:  %.1f%%", snapshot.Population.Utilization*100), rect.Min.X+12, y+80)
+	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("  Occupied:     %d", snapshot.Population.OccupiedCells), rect.Min.X+12, y+100)
 }

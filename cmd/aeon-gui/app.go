@@ -25,6 +25,8 @@ type App struct {
 	accumulatedStep float64
 }
 
+var speedLevels = []float64{0.25, 0.5, 1, 2, 5, 10}
+
 func NewApp(cfg simulation.GUIConfig) (*App, error) {
 	sim, err := simulation.NewSimulationWithConfig(cfg)
 	if err != nil {
@@ -65,10 +67,18 @@ func (a *App) Update() error {
 		a.snapshot = a.simulation.Snapshot()
 		a.playing = false
 	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyLeft) {
+		if err := a.reset(); err != nil {
+			return err
+		}
+	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyR) {
 		if err := a.reset(); err != nil {
 			return err
 		}
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyS) {
+		a.cycleSpeed(1)
 	}
 	for i := range layerShortcuts {
 		if inpututil.IsKeyJustPressed(layerShortcuts[i].key) {
@@ -88,17 +98,17 @@ func (a *App) Draw(screen *ebiten.Image) {
 
 	headerRect := image.Rect(0, 0, windowWidth, 64)
 	drawPanel(screen, headerRect, themePanel, 2)
-	drawHeader(screen, a.snapshot)
+	drawHeader(screen, a.snapshot, a.config.Seed)
 
-	sidebarRect := image.Rect(0, 64, 240, 720)
+	sidebarRect := image.Rect(0, 64, 220, 720)
 	drawPanel(screen, sidebarRect, themePanel, 2)
 	drawLayerList(screen, sidebarRect, a.layer)
 
-	mapRect := image.Rect(240, 64, 1040, 720)
+	mapRect := image.Rect(220, 64, 1020, 720)
 	drawPanel(screen, mapRect, themePanel, 2)
 	drawMap(screen, a.snapshot, a.layer, mapRect, a.selectedCell)
 
-	inspectorRect := image.Rect(1040, 64, 1280, 720)
+	inspectorRect := image.Rect(1020, 64, 1280, 720)
 	drawPanel(screen, inspectorRect, themePanel, 2)
 	drawInspector(screen, inspectorRect, a.snapshot, a.selectedCell)
 
@@ -120,14 +130,37 @@ func (a *App) reset() error {
 	a.simulation = rebuilt
 	a.snapshot = rebuilt.Snapshot()
 	a.playing = false
+	a.yearsPerSecond = 1
 	a.accumulatedStep = 0
 	a.selectedCell = nil
 	return nil
 }
 
+func (a *App) cycleSpeed(delta int) {
+	if len(speedLevels) == 0 {
+		return
+	}
+	current := a.displaySpeed()
+	for i, v := range speedLevels {
+		if v == current {
+			idx := (i + delta + len(speedLevels)) % len(speedLevels)
+			a.yearsPerSecond = speedLevels[idx]
+			return
+		}
+	}
+	a.yearsPerSecond = speedLevels[0]
+}
+
+func (a *App) displaySpeed() float64 {
+	if a.yearsPerSecond <= 0 {
+		return 1
+	}
+	return a.yearsPerSecond
+}
+
 func (a *App) mapCellFromMouse() (*CellSelection, bool) {
 	posX, posY := ebiten.CursorPosition()
-	viewport := image.Rect(240, 64, 1040, 720)
+	viewport := image.Rect(220, 64, 1020, 720)
 	if !pointInRect(posX, posY, viewport) {
 		return nil, false
 	}
@@ -152,5 +185,38 @@ func drawPanel(screen *ebiten.Image, rect image.Rectangle, col color.Color, bord
 	img := ebiten.NewImage(rect.Dx(), rect.Dy())
 	img.Fill(col)
 	screen.DrawImage(img, &ebiten.DrawImageOptions{})
-	_ = border
+	if border > 0 {
+		drawBorderRect(screen, rect, themeAccent, border)
+	}
+}
+
+func drawBorderRect(screen *ebiten.Image, rect image.Rectangle, col color.Color, thickness int) {
+	if rect.Dx() <= 0 || rect.Dy() <= 0 || thickness <= 0 {
+		return
+	}
+	for i := 0; i < thickness; i++ {
+		line := ebiten.NewImage(rect.Dx(), 1)
+		line.Fill(col)
+		opts := &ebiten.DrawImageOptions{}
+		opts.GeoM.Translate(float64(rect.Min.X), float64(rect.Min.Y+i))
+		screen.DrawImage(line, opts)
+
+		line2 := ebiten.NewImage(rect.Dx(), 1)
+		line2.Fill(col)
+		opts2 := &ebiten.DrawImageOptions{}
+		opts2.GeoM.Translate(float64(rect.Min.X), float64(rect.Max.Y-1-i))
+		screen.DrawImage(line2, opts2)
+
+		colImg := ebiten.NewImage(1, rect.Dy())
+		colImg.Fill(col)
+		opts3 := &ebiten.DrawImageOptions{}
+		opts3.GeoM.Translate(float64(rect.Min.X+i), float64(rect.Min.Y))
+		screen.DrawImage(colImg, opts3)
+
+		colImg2 := ebiten.NewImage(1, rect.Dy())
+		colImg2.Fill(col)
+		opts4 := &ebiten.DrawImageOptions{}
+		opts4.GeoM.Translate(float64(rect.Max.X-1-i), float64(rect.Min.Y))
+		screen.DrawImage(colImg2, opts4)
+	}
 }
