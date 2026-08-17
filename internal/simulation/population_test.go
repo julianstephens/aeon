@@ -144,10 +144,13 @@ func TestPopulationModel_AdvanceOneYear_AppliesStarvationAboveCapacity(t *testin
 	tm := terrainMapWithFoodCapacities(1)
 	tm.Cells[0].Population = 15
 
-	pm.AdvanceOneYear(tm)
+	tick := pm.AdvanceOneYear(tm)
 
 	if tm.Cells[0].Population != 12.5 {
 		t.Fatalf("expected starvation to reduce population to 12.5, got %.4f", tm.Cells[0].Population)
+	}
+	if tick.StarvationDeaths != 2.5 {
+		t.Fatalf("expected starvation deaths 2.5, got %.4f", tick.StarvationDeaths)
 	}
 }
 
@@ -163,7 +166,7 @@ func TestPopulationModel_AdvanceOneYear_MigratesExcessPopulationToNeighbor(t *te
 	tm.Cells[1].Population = 0
 	tm.Cells[2].Population = 0
 
-	pm.AdvanceOneYear(tm)
+	tick := pm.AdvanceOneYear(tm)
 
 	if tm.Cells[0].Population != 15 {
 		t.Fatalf("expected source population 15, got %.4f", tm.Cells[0].Population)
@@ -173,6 +176,9 @@ func TestPopulationModel_AdvanceOneYear_MigratesExcessPopulationToNeighbor(t *te
 	}
 	if tm.Cells[2].Population != 0 {
 		t.Fatalf("expected non-neighbor population 0, got %.4f", tm.Cells[2].Population)
+	}
+	if tick.MigratedPopulation != 5 {
+		t.Fatalf("expected migrated population 5, got %.4f", tick.MigratedPopulation)
 	}
 }
 

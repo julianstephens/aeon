@@ -107,6 +107,78 @@ Run the tests:
 go test ./...
 ```
 
+### Experiment runner
+
+Run a repeatable population experiment in text mode:
+
+```bash
+go run ./cmd/aeon experiment --scenario crowded --seed 42 --years 100 --interval 25
+```
+
+Expected output shape:
+
+```text
+Aeon Population Experiment
+
+Seed:       42
+Years:      100
+Population: 10000
+Scenario:   crowded
+
+Year  Population  Capacity  Util.  Cells  Migrants  Deaths
+0     10000       27954     35.8%  959    0         0
+25    10781       27954     38.6%  1788   3180      0
+50    12168       27954     43.5%  1793   2702      0
+75    13732       27954     49.1%  1835   2782      0
+100   15177       27954     54.3%  1978   3285      0
+```
+
+Run the same experiment in JSON mode:
+
+```bash
+go run ./cmd/aeon experiment --scenario crowded --seed 42 --years 100 --interval 25 --format json
+```
+
+Expected JSON shape:
+
+```json
+{
+  "config": {
+    "Seed": "42",
+    "Years": 100,
+    "InitialPopulation": 10000,
+    "GrowthRate": 0.025,
+    "StarvationRate": 0.1,
+    "MigrationRate": 0.07,
+    "MaxCellCapacity": 30,
+    "Interval": 25
+  },
+  "samples": [
+    {
+      "year": 0,
+      "population": 10000,
+      "carrying_capacity": 27954.470598720287,
+      "utilization": 0.3577245351395703,
+      "occupied_cells": 959,
+      "over_capacity_cells": 0,
+      "migrated_population": 0,
+      "source_cells": 0,
+      "destination_cells": 0,
+      "average_distance": 0,
+      "max_distance": 0,
+      "starvation_deaths": 0
+    }
+  ]
+}
+```
+
+Notes:
+
+* Scenarios: `baseline`, `crowded`, `isolated`, `scarcity`
+* CLI flags override scenario values (for example, `--population` or `--migration-rate`)
+* For `years=100` and `interval=25`, samples are recorded at years `0, 25, 50, 75, 100`
+* Results are deterministic for the same seed and configuration
+
 Run a simulation:
 
 ```bash

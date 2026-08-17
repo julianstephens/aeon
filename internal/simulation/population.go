@@ -31,6 +31,15 @@ type PopulationPressureSummary struct {
 	Over100      int
 }
 
+type PopulationTickResult struct {
+	MigratedPopulation float64
+	SourceCells        int
+	DestinationCells   int
+	AverageDistance    float64
+	MaxDistance        int
+	StarvationDeaths   float64
+}
+
 type PopulationModel struct {
 	params        PopulationParameters
 	tick          int
@@ -47,9 +56,10 @@ func (pm *PopulationModel) SimulatePopulationDynamics(durationYears int, terrain
 	}
 }
 
-func (pm *PopulationModel) AdvanceOneYear(terrainMap *simtypes.TerrainMap) {
-	pm.simulateYear(terrainMap)
+func (pm *PopulationModel) AdvanceOneYear(terrainMap *simtypes.TerrainMap) PopulationTickResult {
+	result := pm.simulateYear(terrainMap)
 	pm.tick++
+	return result
 }
 
 type seededCell struct {
@@ -113,33 +123,7 @@ func (pm *PopulationModel) MigrationSummary() MigrationSummary {
 }
 
 func (pm *PopulationModel) PopulationPressureSummary(terrainMap *simtypes.TerrainMap) PopulationPressureSummary {
-	summary := PopulationPressureSummary{}
-	if terrainMap == nil {
-		return summary
-	}
-
-	for i := range terrainMap.Cells {
-		cell := &terrainMap.Cells[i]
-		capacity := pm.carryingCapacity(cell)
-		if capacity <= 0 || cell.Population <= 0 {
-			continue
-		}
-
-		pressure := cell.Population / capacity * 100
-		switch {
-		case pressure < 25:
-			summary.Under25++
-		case pressure < 50:
-			summary.Range25to50++
-		case pressure < 75:
-			summary.Range50to75++
-		case pressure < 100:
-			summary.Range75to100++
-		default:
-			summary.Over100++
-		}
-	}
-	return summary
+	return CollectPopulationMetrics(terrainMap, pm).Pressure
 }
 
 func (pm *PopulationModel) TotalPopulation(terrainMap *simtypes.TerrainMap) int {
@@ -150,20 +134,30 @@ func (pm *PopulationModel) TotalPopulation(terrainMap *simtypes.TerrainMap) int 
 	return int(math.Round(total))
 }
 
-func (pm *PopulationModel) simulateYear(terrainMap *simtypes.TerrainMap) {
+func (pm *PopulationModel) simulateYear(terrainMap *simtypes.TerrainMap) PopulationTickResult {
 	logger.WithFields(map[string]interface{}{
 		"year":       pm.tick,
 		"population": pm.TotalPopulation(terrainMap),
 	}).Debug("simulating population dynamics for year")
 
 	pm.growPopulation(terrainMap)
-	pm.applyStarvation(terrainMap)
+	starvationDeaths := pm.applyStarvation(terrainMap)
 	pm.applyMigration(terrainMap)
+	migration := pm.MigrationSummary()
 
 	logger.WithFields(map[string]interface{}{
 		"year":       pm.tick,
 		"population": pm.TotalPopulation(terrainMap),
 	}).Debug("population dynamics simulation completed for year")
+
+	return PopulationTickResult{
+		MigratedPopulation: migration.Moved,
+		SourceCells:        migration.SourceCells,
+		DestinationCells:   migration.DestinationCells,
+		AverageDistance:    migration.AverageDistance,
+		MaxDistance:        migration.MaxDistance,
+		StarvationDeaths:   starvationDeaths,
+	}
 }
 
 // carryingCapacity converts the environmental food-capacity score into the
@@ -192,9 +186,10 @@ func (pm *PopulationModel) growPopulation(terrainMap *simtypes.TerrainMap) {
 	}
 }
 
-func (pm *PopulationModel) applyStarvation(terrainMap *simtypes.TerrainMap) {
+func (pm *PopulationModel) applyStarvation(terrainMap *simtypes.TerrainMap) float64 {
+	deaths := 0.0
 	if pm.params.StarvationRate <= 0 {
-		return
+		return deaths
 	}
 
 	for i := range terrainMap.Cells {
@@ -212,10 +207,13 @@ func (pm *PopulationModel) applyStarvation(terrainMap *simtypes.TerrainMap) {
 
 		mortality := excess * pm.params.StarvationRate
 		cell.Population -= mortality
+		deaths += mortality
 		if cell.Population < 0 {
 			cell.Population = 0
 		}
 	}
+
+	return deaths
 }
 
 type migrationFlow struct {
@@ -459,11 +457,11 @@ func distributeSeedPopulation(cells []seededCell, targetPopulation int) int {
 
 		if remaining > 0 {
 			sort.Slice(remainders, func(i, j int) bool {
-			if remainders[i].frac == remainders[j].frac {
-				return remainders[i].cellIndex < remainders[j].cellIndex
-			}
-			return remainders[i].frac > remainders[j].frac
-		})
+				if remainders[i].frac == remainders[j].frac {
+					return remainders[i].cellIndex < remainders[j].cellIndex
+				}
+				return remainders[i].frac > remainders[j].frac
+			})
 
 			for _, rem := range remainders {
 				if remaining <= 0 {
