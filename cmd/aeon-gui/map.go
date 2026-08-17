@@ -43,6 +43,20 @@ var layerShortcuts = []layerShortcut{
 	{key: ebiten.Key6, mode: LayerPopulation},
 }
 
+func drawMapPanel(screen *ebiten.Image, panel image.Rectangle, snapshot simulation.SimulationSnapshot, mode LayerMode, selected *CellSelection) {
+	ebitenutil.DebugPrintAt(screen, "WORLD", panel.Min.X+16, panel.Min.Y+14)
+	ebitenutil.DebugPrintAt(screen, layerNames[int(mode)], panel.Min.X+16, panel.Min.Y+30)
+	viewport := image.Rect(panel.Min.X+16, panel.Min.Y+52, panel.Max.X-16, panel.Max.Y-16)
+	mapSize := viewport.Dx()
+	if viewport.Dy() < mapSize {
+		mapSize = viewport.Dy()
+	}
+	mapLeft := viewport.Min.X + (viewport.Dx()-mapSize)/2
+	mapTop := viewport.Min.Y + (viewport.Dy()-mapSize)/2
+	viewport = image.Rect(mapLeft, mapTop, mapLeft+mapSize, mapTop+mapSize)
+	drawMap(screen, snapshot, mode, viewport, selected)
+}
+
 func drawMap(screen *ebiten.Image, snapshot simulation.SimulationSnapshot, mode LayerMode, viewport image.Rectangle, selected *CellSelection) {
 	if snapshot.TerrainMap.Width == 0 || snapshot.TerrainMap.Height == 0 {
 		return
@@ -71,8 +85,6 @@ func drawMap(screen *ebiten.Image, snapshot simulation.SimulationSnapshot, mode 
 			drawBorderRect(screen, outlineRect, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 2)
 		}
 	}
-	label := "World"
-	ebitenutil.DebugPrintAt(screen, label, viewport.Min.X+10, viewport.Min.Y+10)
 }
 
 func colorForCell(snapshot simulation.SimulationSnapshot, index int, mode LayerMode, maxPop float64, terrain simtypes.TerrainType) color.RGBA {
