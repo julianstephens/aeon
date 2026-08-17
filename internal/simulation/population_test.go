@@ -7,20 +7,24 @@ import (
 	"github.com/julianstephens/aeon/internal/simulation"
 )
 
-func TestPopulationModel_SeedPopulation_WeightedByFoodCapacity(t *testing.T) {
+func TestPopulationModel_SeedPopulation_WeightsSelectedCentersByFoodCapacity(t *testing.T) {
 	pm := simulation.NewPopulationModel(simulation.PopulationParameters{MaxCellCapacity: 100})
 	tm := terrainMapWithFoodCapacities(1, 2, 3)
 
-	allocated := pm.SeedPopulation(tm, 60)
-	if allocated != 60 {
-		t.Fatalf("unexpected seeded total: got %d, want %d", allocated, 60)
+	allocated := pm.SeedPopulation(tm, 20)
+	if allocated != 20 {
+		t.Fatalf("unexpected seeded total: got %d, want %d", allocated, 20)
 	}
 
-	want := []float64{10, 20, 30}
-	for i := range want {
-		if tm.Cells[i].Population != want[i] {
-			t.Fatalf("unexpected cell %d population: got %.0f, want %.0f", i, tm.Cells[i].Population, want[i])
-		}
+	if tm.Cells[1].Population != 0 {
+		t.Fatalf("expected unselected center to remain empty, got %.0f", tm.Cells[1].Population)
+	}
+	if tm.Cells[0].Population != 5 || tm.Cells[2].Population != 15 {
+		t.Fatalf(
+			"unexpected seeded distribution: got [%.0f %.0f], want [5 15]",
+			tm.Cells[0].Population,
+			tm.Cells[2].Population,
+		)
 	}
 }
 
@@ -88,10 +92,87 @@ func TestPopulationModel_SeedPopulation_SkipsNonPositiveFoodAndImpassableCells(t
 	}
 }
 
+func TestPopulationModel_AdvanceOneYear_GrowsBelowCarryingCapacity(t *testing.T) {
+	pm := simulation.NewPopulationModel(simulation.PopulationParameters{
+		GrowthRate:      0.025,
+		MaxCellCapacity: 20,
+	})
+	tm := terrainMapWithFoodCapacities(1)
+	tm.Cells[0].Population = 5
+
+	pm.AdvanceOneYear(tm)
+
+	if tm.Cells[0].Population <= 5 {
+		t.Fatalf("expected population growth, got %.4f", tm.Cells[0].Population)
+	}
+	if pm.CurrentTick() != 1 {
+		t.Fatalf("expected tick 1, got %d", pm.CurrentTick())
+	}
+}
+
+func TestPopulationModel_AdvanceOneYear_AppliesStarvationAboveCapacity(t *testing.T) {
+	pm := simulation.NewPopulationModel(simulation.PopulationParameters{
+		GrowthRate:      0,
+		StarvationRate:  0.5,
+		MaxCellCapacity: 10,
+	})
+	tm := terrainMapWithFoodCapacities(1)
+	tm.Cells[0].Population = 15
+
+	pm.AdvanceOneYear(tm)
+
+	if tm.Cells[0].Population != 12.5 {
+		t.Fatalf("expected starvation to reduce population to 12.5, got %.4f", tm.Cells[0].Population)
+	}
+}
+
+func TestPopulationModel_AdvanceOneYear_MigratesExcessPopulationToNeighbor(t *testing.T) {
+	pm := simulation.NewPopulationModel(simulation.PopulationParameters{
+		GrowthRate:      0,
+		StarvationRate:  0,
+		MigrationRate:   0.5,
+		MaxCellCapacity: 10,
+	})
+	tm := terrainMapWithFoodCapacities(1, 1, 1)
+	tm.Cells[0].Population = 20
+
+	pm.AdvanceOneYear(tm)
+
+	if tm.Cells[0].Population != 15 {
+		t.Fatalf("expected source population 15, got %.4f", tm.Cells[0].Population)
+	}
+	if tm.Cells[1].Population != 5 {
+		t.Fatalf("expected neighbor population 5, got %.4f", tm.Cells[1].Population)
+	}
+	if tm.Cells[2].Population != 0 {
+		t.Fatalf("expected non-neighbor population 0, got %.4f", tm.Cells[2].Population)
+	}
+}
+
+func TestPopulationModel_AdvanceOneYear_MigrationUsesSynchronousFlows(t *testing.T) {
+	pm := simulation.NewPopulationModel(simulation.PopulationParameters{
+		GrowthRate:      0,
+		StarvationRate:  0,
+		MigrationRate:   0.5,
+		MaxCellCapacity: 10,
+	})
+	tm := terrainMapWithFoodCapacities(1, 1, 1)
+	tm.Cells[0].Population = 20
+
+	pm.AdvanceOneYear(tm)
+
+	// Cell 1 receives migration during the year but cannot migrate that
+	// newly received population again in the same year.
+	if tm.Cells[1].Population != 5 {
+		t.Fatalf("expected synchronous migration to leave neighbor at 5, got %.4f", tm.Cells[1].Population)
+	}
+}
+
 func terrainMapWithFoodCapacities(foodCapacities ...float64) *simtypes.TerrainMap {
 	tm := simtypes.NewTerrainMap(len(foodCapacities), 1)
 	for i, capacity := range foodCapacities {
 		tm.Cells[i].Location = simtypes.Position{X: i, Y: 0}
+		tm.Cells[i].Terrain = simtypes.TerrainTypePlains
 		tm.Cells[i].FoodCapacity = capacity
 		tm.Cells[i].Population = 99
 	}
