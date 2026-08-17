@@ -91,14 +91,10 @@ func (tc *TerrainClassifier) Classify(elevation, moisture, fertility, terrain *s
 }
 
 func (tc *TerrainClassifier) setInitialTerrainTypes(terrain *simtypes.Layer) error {
-	if tc.tm.IsInitialized() {
-		return nil
-	}
-
 	for x := 0; x < tc.tm.Width; x++ {
 		for y := 0; y < tc.tm.Height; y++ {
-			ter := terrain.Get(x, y)
-			if err := tc.tm.SetTerrainType(x, y, simtypes.TerrainType(ter)); err != nil {
+			ter := simtypes.TerrainType(terrain.Get(x, y))
+			if err := tc.tm.SetTerrainType(x, y, ter); err != nil {
 				return &PipelineError{
 					Code:    CodeClassificationError,
 					Message: "Failed to set initial terrain type",
@@ -108,7 +104,6 @@ func (tc *TerrainClassifier) setInitialTerrainTypes(terrain *simtypes.Layer) err
 		}
 	}
 
-	tc.tm.SetInitialized(true)
 	return nil
 }
 
@@ -207,9 +202,8 @@ func mountainScore(elevation, fertility, mountainNeighbors float64) float64 {
 	highland := normalizeRange(elevation, WaterElevationThreshold, MountainElevationThreshold)
 	fertilityPenalty := clamp01(fertility) * MountainFertilityPenalty
 	return MountainElevationWeight*highland +
-		MountainNeighborhoodWeight*clamp01(mountainNeighbors) +
-		MountainFertilityPenalty*0 +
-		(1 - MountainFertilityPenalty) * (1 - fertilityPenalty)
+		MountainNeighborhoodWeight*clamp01(mountainNeighbors) -
+		fertilityPenalty
 }
 
 func forestScore(elevation, moisture, fertility, forestNeighbors float64) float64 {
