@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/alecthomas/kong"
 	"github.com/julianstephens/aeon/internal/simtypes"
@@ -108,6 +109,10 @@ func analyze(seed uint64) error {
 		return err
 	}
 
+	diagnostics := layers.ComputeWorldDiagnostics(*tm)
+	rules := layers.DefaultViabilityRules()
+	validationErr := layers.ValidateWorld(diagnostics, rules)
+
 	fmt.Printf("Aeon Terrain Analysis\n")
 	fmt.Printf("Seed: %d\n", seed)
 	fmt.Printf("Map: %dx%d\n\n", tm.Width, tm.Height)
@@ -121,8 +126,9 @@ func analyze(seed uint64) error {
 		"Fertility",
 		*layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 { return cell.Fertility }),
 	)
-	printTerrainDistribution(*tm)
-	printConnectedRegions(*tm)
+	printTerrainDistribution(diagnostics, *tm)
+	printConnectedRegions(diagnostics)
+	printWorldViability(diagnostics, rules, validationErr, tm.Width*tm.Height)
 	printTerrainBoundaries(*tm)
 	printNeighborAgreement(*tm)
 
@@ -167,35 +173,82 @@ func printScalarStats(name string, layer simtypes.Layer) {
 	fmt.Printf("  stddev: %.3f\n\n", math.Sqrt(variance))
 }
 
-func printTerrainDistribution(tm simtypes.TerrainMap) {
-	counts := terrainCounts(tm)
+func printTerrainDistribution(diagnostics layers.WorldDiagnostics, tm simtypes.TerrainMap) {
 	total := tm.Width * tm.Height
 
 	fmt.Printf("Terrain distribution\n")
 	for _, terrain := range terrainTypes() {
 		percent := 0.0
 		if total > 0 {
-			percent = float64(counts[terrain]) / float64(total) * 100
+			percent = diagnostics.TerrainPercentages[terrain] * 100
 		}
-		fmt.Printf("  %-9s %5.1f%% (%d)\n", terrain.String()+":", percent, counts[terrain])
+		fmt.Printf("  %-9s %5.1f%% (%d)\n", terrain.String()+":", percent, diagnostics.TerrainCounts[terrain])
 	}
 	fmt.Println()
 }
 
-func printConnectedRegions(tm simtypes.TerrainMap) {
+func printConnectedRegions(diagnostics layers.WorldDiagnostics) {
 	fmt.Printf("Connected regions\n")
 	for _, terrain := range terrainTypes() {
-		regions := connectedRegionSizes(tm, terrain)
-		largest, isolated := 0, 0
-		for _, size := range regions {
-			largest = maxInt(largest, size)
-			if size == 1 {
-				isolated++
-			}
-		}
-		fmt.Printf("  %-9s regions=%d largest=%d isolated=%d\n", terrain.String()+":", len(regions), largest, isolated)
+		fmt.Printf(
+			"  %-9s regions=%d largest=%d\n",
+			terrain.String()+":",
+			diagnostics.RegionCounts[terrain],
+			diagnostics.LargestRegion[terrain],
+		)
 	}
 	fmt.Println()
+}
+
+func printWorldViability(
+	diagnostics layers.WorldDiagnostics,
+	rules layers.ViabilityRules,
+	validationErr error,
+	totalCells int,
+) {
+	largestLandPercent := 0.0
+	if totalCells > 0 {
+		largestLandPercent = float64(diagnostics.LargestPassableLandRegion) / float64(totalCells) * 100
+	}
+
+	fmt.Printf("World viability\n")
+	fmt.Printf("  Passable land:        %5.1f%%\n", diagnostics.PassableLandPercentage*100)
+	fmt.Printf("  Largest land region:  %5.1f%%\n", largestLandPercent)
+	fmt.Printf("  Water:                %5.1f%%\n", diagnostics.TerrainPercentages[simtypes.TerrainTypeWater]*100)
+	fmt.Printf("  Mountain:             %5.1f%%\n", diagnostics.TerrainPercentages[simtypes.TerrainTypeMountain]*100)
+
+	if validationErr == nil {
+		fmt.Printf("  Viable:               yes\n\n")
+		return
+	}
+
+	fmt.Printf("  Viable:               no\n\n")
+	fmt.Printf("Reasons:\n")
+	if reasons, ok := validationErr.(*layers.WorldValidationError); ok {
+		for _, reason := range reasons.Reasons {
+			fmt.Printf("  - %s\n", simplifyReason(reason, rules))
+		}
+	} else {
+		fmt.Printf("  - %s\n", validationErr.Error())
+	}
+	fmt.Println()
+}
+
+func simplifyReason(reason string, rules layers.ViabilityRules) string {
+	if strings.HasPrefix(reason, "passable land") {
+		return fmt.Sprintf("passable land below %.1f%%", rules.MinPassableLand*100)
+	}
+	if strings.HasPrefix(reason, "water") {
+		return fmt.Sprintf("water exceeds %.1f%%", rules.MaxWater*100)
+	}
+	if strings.HasPrefix(reason, "mountain") {
+		return fmt.Sprintf("mountain exceeds %.1f%%", rules.MaxMountain*100)
+	}
+	if strings.HasPrefix(reason, "largest land region") {
+		return fmt.Sprintf("largest land region below %d", rules.MinLargestLandRegion)
+	}
+
+	return reason
 }
 
 func printTerrainBoundaries(tm simtypes.TerrainMap) {
@@ -304,60 +357,6 @@ func connectedMaskRegionSizes(mask []bool, width, height int) []int {
 	return regions
 }
 
-func connectedRegionSizes(tm simtypes.TerrainMap, target simtypes.TerrainType) []int {
-	visited := make([]bool, tm.Width*tm.Height)
-	regions := make([]int, 0)
-
-	for y := 0; y < tm.Height; y++ {
-		for x := 0; x < tm.Width; x++ {
-			index := y*tm.Width + x
-			if visited[index] {
-				continue
-			}
-
-			cell := tm.GetCell(x, y)
-			if cell == nil || cell.Terrain != target {
-				visited[index] = true
-				continue
-			}
-
-			queue := []simtypes.Position{{X: x, Y: y}}
-			visited[index] = true
-			size := 0
-
-			for len(queue) > 0 {
-				current := queue[0]
-				queue = queue[1:]
-				size++
-
-				for _, neighbor := range orthogonalNeighbors(current) {
-					if neighbor.X < 0 || neighbor.X >= tm.Width || neighbor.Y < 0 || neighbor.Y >= tm.Height {
-						continue
-					}
-
-					neighborIndex := neighbor.Y*tm.Width + neighbor.X
-					if visited[neighborIndex] {
-						continue
-					}
-
-					neighborCell := tm.GetCell(neighbor.X, neighbor.Y)
-					if neighborCell == nil || neighborCell.Terrain != target {
-						visited[neighborIndex] = true
-						continue
-					}
-
-					visited[neighborIndex] = true
-					queue = append(queue, neighbor)
-				}
-			}
-
-			regions = append(regions, size)
-		}
-	}
-
-	return regions
-}
-
 func printNeighborAgreement(tm simtypes.TerrainMap) {
 	type counts struct {
 		same  int
@@ -400,18 +399,6 @@ func printNeighborAgreement(tm simtypes.TerrainMap) {
 	}
 }
 
-func terrainCounts(tm simtypes.TerrainMap) map[simtypes.TerrainType]int {
-	counts := map[simtypes.TerrainType]int{}
-	for y := 0; y < tm.Height; y++ {
-		for x := 0; x < tm.Width; x++ {
-			if cell := tm.GetCell(x, y); cell != nil {
-				counts[cell.Terrain]++
-			}
-		}
-	}
-	return counts
-}
-
 func terrainTypes() []simtypes.TerrainType {
 	return []simtypes.TerrainType{
 		simtypes.TerrainTypeWater,
@@ -447,7 +434,7 @@ func generateTerrainMap(seed uint64) (*simtypes.TerrainMap, *simtypes.Layer, err
 	random := rng.NewRNG(seedBytes)
 
 	pipeline := layers.NewPipeline(simtypes.DefaultMapWidth, simtypes.DefaultMapHeight, random)
-	tm, err := pipeline.Run(seedBytes)
+	tm, err := pipeline.GenerateWorld(seedBytes)
 	if err != nil {
 		return nil, nil, err
 	}

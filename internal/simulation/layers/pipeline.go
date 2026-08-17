@@ -1,36 +1,45 @@
 package layers
 
 import (
+	"fmt"
+
 	"github.com/julianstephens/aeon/internal/simtypes"
 	"github.com/julianstephens/aeon/internal/simulation/rng"
 )
 
+const MaxGenerationAttempts = 10
+
 type Pipeline struct {
-	tm         *simtypes.TerrainMap
+	width      int
+	height     int
 	generator  *Generator
 	classifier *TerrainClassifier
+	validator  *WorldValidator
 }
 
 func NewPipeline(width, height int, baseRng *rng.RNG) *Pipeline {
-	tm := simtypes.NewTerrainMap(width, height)
 	return &Pipeline{
-		tm:         tm,
-		generator:  NewGenerator(width, height, baseRng),
-		classifier: NewTerrainClassifier(tm),
+		width:     width,
+		height:    height,
+		generator: NewGenerator(width, height, baseRng),
+		validator: NewWorldValidator(DefaultViabilityRules()),
 	}
 }
 
 // Run executes terrain layer generation, applies the generated scalar layers,
 // and classifies the final terrain map.
 func (p *Pipeline) Run(worldSeed [32]byte) (*simtypes.TerrainMap, error) {
+	tm := simtypes.NewTerrainMap(p.width, p.height)
+	p.classifier = NewTerrainClassifier(tm)
+
 	artifacts, err := p.generator.GenerateLayers(worldSeed)
 	if err != nil {
 		return nil, err
 	}
 
-	p.tm.ApplyElevation(artifacts.Elevation)
-	p.tm.ApplyMoisture(artifacts.Moisture)
-	p.tm.ApplyFertility(artifacts.Fertility)
+	tm.ApplyElevation(artifacts.Elevation)
+	tm.ApplyMoisture(artifacts.Moisture)
+	tm.ApplyFertility(artifacts.Fertility)
 
 	if err := p.classifier.Classify(
 		artifacts.Elevation,
@@ -40,5 +49,34 @@ func (p *Pipeline) Run(worldSeed [32]byte) (*simtypes.TerrainMap, error) {
 		return nil, err
 	}
 
-	return p.tm, nil
+	if _, err := p.validator.Validate(*tm); err != nil {
+		return nil, &PipelineError{
+			Code:    CodeGenerationError,
+			Message: "Generated world failed viability validation",
+			Cause:   err,
+		}
+	}
+
+	return tm, nil
+}
+
+// GenerateWorld retries generation with deterministic retry seeds until it
+// finds a viable world or exhausts all attempts.
+func (p *Pipeline) GenerateWorld(worldSeed [32]byte) (*simtypes.TerrainMap, error) {
+	var lastErr error
+
+	for attempt := 0; attempt < MaxGenerationAttempts; attempt++ {
+		retrySeed := rng.DeriveSeed(worldSeed, fmt.Sprintf("retry:%d", attempt))
+		tm, err := p.Run(retrySeed)
+		if err == nil {
+			return tm, nil
+		}
+		lastErr = err
+	}
+
+	return nil, &PipelineError{
+		Code:    CodeGenerationError,
+		Message: fmt.Sprintf("Failed to generate viable world after %d attempts", MaxGenerationAttempts),
+		Cause:   lastErr,
+	}
 }

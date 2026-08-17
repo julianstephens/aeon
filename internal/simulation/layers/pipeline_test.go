@@ -1,12 +1,16 @@
 package layers_test
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"testing"
 
 	"github.com/julianstephens/aeon/internal/simtypes"
 	"github.com/julianstephens/aeon/internal/simulation/layers"
 	"github.com/julianstephens/aeon/internal/simulation/rng"
 )
+
+var diagnosticSeeds = []uint64{42, 43, 44, 1337, 9001, 123456}
 
 func TestPipeline_Run_AppliesScalarLayersAndAssignsTerrain(t *testing.T) {
 	worldSeed := seedFromString("pipeline-applies-layers")
@@ -69,6 +73,65 @@ func TestPipeline_Run_IsDeterministicForSameSeed(t *testing.T) {
 	}
 
 	assertTerrainMapsEqual(t, firstSnapshot, *second)
+}
+
+func TestPipeline_GenerateWorld_IsDeterministicForSameSeed(t *testing.T) {
+	seed := seedFromString("pipeline-retry-determinism")
+	pipelineA := layers.NewPipeline(simtypes.DefaultMapWidth, simtypes.DefaultMapHeight, rng.NewRNG(seed))
+	pipelineB := layers.NewPipeline(simtypes.DefaultMapWidth, simtypes.DefaultMapHeight, rng.NewRNG(seed))
+
+	first, err := pipelineA.GenerateWorld(seed)
+	if err != nil {
+		t.Fatalf("first GenerateWorld returned error: %v", err)
+	}
+
+	second, err := pipelineB.GenerateWorld(seed)
+	if err != nil {
+		t.Fatalf("second GenerateWorld returned error: %v", err)
+	}
+
+	assertTerrainMapsEqual(t, *first, *second)
+}
+
+func TestPipeline_GenerateWorld_DiagnosticSeedCorpusProducesViableWorlds(t *testing.T) {
+	for _, seedValue := range diagnosticSeeds {
+		t.Run(fmt.Sprintf("seed_%d", seedValue), func(t *testing.T) {
+			seed := sha256.Sum256(fmt.Appendf(nil, "%d", seedValue))
+			pipeline := layers.NewPipeline(simtypes.DefaultMapWidth, simtypes.DefaultMapHeight, rng.NewRNG(seed))
+
+			tm, err := pipeline.GenerateWorld(seed)
+			if err != nil {
+				t.Fatalf("GenerateWorld returned error: %v", err)
+			}
+
+			diagnostics := layers.ComputeWorldDiagnostics(*tm)
+			if err := layers.ValidateWorld(diagnostics, layers.DefaultViabilityRules()); err != nil {
+				t.Fatalf("generated world is not viable: %v", err)
+			}
+
+			terrainKinds := map[simtypes.TerrainType]struct{}{}
+			for i, cell := range tm.Cells {
+				if cell.Elevation < 0 || cell.Elevation > 1 {
+					t.Fatalf("elevation out of [0,1] at index %d: %f", i, cell.Elevation)
+				}
+				if cell.Moisture < 0 || cell.Moisture > 1 {
+					t.Fatalf("moisture out of [0,1] at index %d: %f", i, cell.Moisture)
+				}
+				if cell.Fertility < 0 || cell.Fertility > 1 {
+					t.Fatalf("fertility out of [0,1] at index %d: %f", i, cell.Fertility)
+				}
+				terrainKinds[cell.Terrain] = struct{}{}
+			}
+
+			if len(terrainKinds) < 2 {
+				t.Fatalf("expected at least two terrain types, got %d", len(terrainKinds))
+			}
+
+			if diagnostics.LargestPassableLandRegion <= 0 {
+				t.Fatal("expected at least one passable land region")
+			}
+		})
+	}
 }
 
 func cloneTerrainMap(src simtypes.TerrainMap) simtypes.TerrainMap {

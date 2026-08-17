@@ -4,6 +4,17 @@
 
 It is intended for debugging terrain generation rather than as part of the runtime simulation or web application.
 
+## Commands
+
+`mapviz` exposes two subcommands:
+
+```bash
+go run ./cmd/mapviz analyze --seed 42
+go run ./cmd/mapviz render --seed 42 --layer terrain --output terrain.png
+```
+
+`analyze` now reports world viability using the same deterministic retry and validation rules as the simulation terrain pipeline.
+
 ## Usage
 
 Run from the repository root:
@@ -75,6 +86,34 @@ Changing the seed produces a different deterministic world:
 
 ```bash
 go run ./cmd/mapviz -seed 1337 -layer elevation -output world-1337.png
+```
+
+## Viability Output
+
+`mapviz analyze` includes a world viability section:
+
+```text
+World viability
+    Passable land:        76.4%
+    Largest land region:  68.2%
+    Water:                23.6%
+    Mountain:              6.8%
+    Viable:               yes
+```
+
+If a generated attempt fails validation, analyze reports why:
+
+```text
+World viability
+    Passable land:        12.4%
+    Largest land region:   7.1%
+    Water:                81.3%
+    Mountain:              6.3%
+    Viable:               no
+
+Reasons:
+    - passable land below 25.0%
+    - water exceeds 60.0%
 ```
 
 

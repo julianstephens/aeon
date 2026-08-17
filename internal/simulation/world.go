@@ -43,6 +43,7 @@ func NewWorld(seed string) (*World, error) {
 	world := &World{
 		seed:             seedHash,
 		random:           random,
+		layerPipeline:    layers.NewPipeline(simtypes.DefaultMapWidth, simtypes.DefaultMapHeight, random),
 		currentYear:      0,
 		terrainMap:       nil,
 		agents:           []*Agent{},
@@ -63,7 +64,7 @@ func NewWorld(seed string) (*World, error) {
 
 func (w *World) initialize() error {
 	logger.Debug("initializing world terrain map")
-	tm, err := w.layerPipeline.Run(w.seed)
+	tm, err := w.layerPipeline.GenerateWorld(w.seed)
 	if err != nil || tm == nil {
 		return &SimulationError{Code: CodeWorldError, Message: "Failed to generate terrain map", Cause: err}
 	}
