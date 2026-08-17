@@ -10,8 +10,7 @@ const (
 	WaterElevationThreshold    = 0.12
 	MountainElevationThreshold = 0.92
 
-	// Scores are weighted independently so the middle of the elevation range can
-	// be classified using moisture, fertility, and neighborhood context.
+	// Scores are weighted so each terrain type competes on the same approximate [0, 1] scale.
 	WaterElevationWeight       = 0.55
 	WaterMoistureWeight        = 0.20
 	WaterNeighborhoodWeight    = 0.25
@@ -50,9 +49,7 @@ type NeighborTerrainStats struct {
 }
 
 func NewTerrainClassifier(tm *simtypes.TerrainMap) *TerrainClassifier {
-	return &TerrainClassifier{
-		tm: tm,
-	}
+	return &TerrainClassifier{tm: tm}
 }
 
 // Classify assigns a terrain type to every cell using elevation, moisture,
@@ -73,7 +70,6 @@ func (tc *TerrainClassifier) Classify(elevation, moisture, fertility, terrain *s
 				}
 
 				terrainType := tc.classifyCell(
-					cell.Location,
 					elevation.Get(x, y),
 					moisture.Get(x, y),
 					fertility.Get(x, y),
@@ -95,8 +91,10 @@ func (tc *TerrainClassifier) Classify(elevation, moisture, fertility, terrain *s
 }
 
 func (tc *TerrainClassifier) setInitialTerrainTypes(terrain *simtypes.Layer) error {
-	// Terrain classification owns the TerrainType field, so initialize it from
-	// the generated terrain layer regardless of the TerrainMap's initialized flag.
+	if tc.tm.IsInitialized() {
+		return nil
+	}
+
 	for x := 0; x < tc.tm.Width; x++ {
 		for y := 0; y < tc.tm.Height; y++ {
 			ter := terrain.Get(x, y)
@@ -153,7 +151,6 @@ func (s NeighborTerrainStats) fraction(count int) float64 {
 }
 
 func (tc *TerrainClassifier) classifyCell(
-	location simtypes.Position,
 	elevation, moisture, fertility float64,
 	neighbors NeighborTerrainStats,
 ) simtypes.TerrainType {
@@ -172,24 +169,29 @@ func (tc *TerrainClassifier) scoreCell(
 	elevation, moisture, fertility float64,
 	neighbors NeighborTerrainStats,
 ) TerrainScores {
+	waterNeighbors := neighbors.fraction(neighbors.Water)
+	mountainNeighbors := neighbors.fraction(neighbors.Mountain)
+	forestNeighbors := neighbors.fraction(neighbors.Forest)
+	plainsNeighbors := neighbors.fraction(neighbors.Plains)
+
 	return TerrainScores{
-		Water: waterScore(elevation, moisture, neighbors.fraction(neighbors.Water)),
+		Water: waterScore(elevation, moisture, waterNeighbors),
 		Plains: plainsScore(
 			elevation,
 			moisture,
 			fertility,
-			neighbors.fraction(neighbors.Plains),
+			plainsNeighbors,
 		),
 		Forest: forestScore(
 			elevation,
 			moisture,
 			fertility,
-			neighbors.fraction(neighbors.Forest),
+			forestNeighbors,
 		),
 		Mountain: mountainScore(
 			elevation,
 			fertility,
-			neighbors.fraction(neighbors.Mountain),
+			mountainNeighbors,
 		),
 	}
 }
@@ -197,33 +199,34 @@ func (tc *TerrainClassifier) scoreCell(
 func waterScore(elevation, moisture, waterNeighbors float64) float64 {
 	lowland := 1 - normalizeRange(elevation, WaterElevationThreshold, MountainElevationThreshold)
 	return WaterElevationWeight*lowland +
-		WaterMoistureWeight*moisture +
-		WaterNeighborhoodWeight*waterNeighbors
+		WaterMoistureWeight*clamp01(moisture) +
+		WaterNeighborhoodWeight*clamp01(waterNeighbors)
 }
 
 func mountainScore(elevation, fertility, mountainNeighbors float64) float64 {
 	highland := normalizeRange(elevation, WaterElevationThreshold, MountainElevationThreshold)
-	fertilityPenalty := fertility * MountainFertilityPenalty
+	fertilityPenalty := clamp01(fertility) * MountainFertilityPenalty
 	return MountainElevationWeight*highland +
-		MountainNeighborhoodWeight*mountainNeighbors +
-		(1-fertilityPenalty)
+		MountainNeighborhoodWeight*clamp01(mountainNeighbors) +
+		MountainFertilityPenalty*0 +
+		(1 - MountainFertilityPenalty) * (1 - fertilityPenalty)
 }
 
 func forestScore(elevation, moisture, fertility, forestNeighbors float64) float64 {
 	moderateElevation := 1 - abs(2*elevation-0.75)
-	return ForestMoistureWeight*moisture +
-		ForestFertilityWeight*fertility +
+	return ForestMoistureWeight*clamp01(moisture) +
+		ForestFertilityWeight*clamp01(fertility) +
 		ForestElevationWeight*clamp01(moderateElevation) +
-		ForestNeighborhoodWeight*forestNeighbors
+		ForestNeighborhoodWeight*clamp01(forestNeighbors)
 }
 
 func plainsScore(elevation, moisture, fertility, plainsNeighbors float64) float64 {
 	moderateElevation := 1 - abs(2*elevation-0.55)
 	moderateMoisture := 1 - abs(2*moisture-0.75)
-	return PlainsFertilityWeight*fertility +
+	return PlainsFertilityWeight*clamp01(fertility) +
 		PlainsMoistureWeight*clamp01(moderateMoisture) +
 		PlainsElevationWeight*clamp01(moderateElevation) +
-		PlainsNeighborhoodWeight*plainsNeighbors
+		PlainsNeighborhoodWeight*clamp01(plainsNeighbors)
 }
 
 func (s TerrainScores) maxTerrain() simtypes.TerrainType {
