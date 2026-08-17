@@ -3,6 +3,7 @@ package layers_test
 import (
 	"crypto/sha256"
 	"math"
+	"reflect"
 	"sort"
 	"testing"
 
@@ -10,6 +11,25 @@ import (
 	"github.com/julianstephens/aeon/internal/simulation/layers"
 	"github.com/julianstephens/aeon/internal/simulation/rng"
 )
+
+func TestGenerator_GenerateLayers_OnlyReturnsScalarLayers(t *testing.T) {
+	worldSeed := seedFromString("scalar-only-artifacts")
+	generator := layers.NewGenerator(simtypes.DefaultMapWidth, simtypes.DefaultMapHeight, rng.NewRNG(worldSeed))
+
+	artifacts, err := generator.GenerateLayers(worldSeed)
+	if err != nil {
+		t.Fatalf("GenerateLayers returned error: %v", err)
+	}
+
+	if artifacts.Elevation == nil || artifacts.Moisture == nil || artifacts.Fertility == nil {
+		t.Fatal("expected all scalar layers to be generated")
+	}
+
+	artifactType := reflect.TypeOf(artifacts)
+	if _, exists := artifactType.FieldByName("Terrain"); exists {
+		t.Fatal("generator artifacts should not expose a discrete terrain layer")
+	}
+}
 
 func TestGenerator_GenerateTerrainMap_IsDeterministicForSameSeed(t *testing.T) {
 	seed := seedFromString("deterministic-terrain")
@@ -129,7 +149,7 @@ func generateTerrainMap(t *testing.T, worldSeed [32]byte) simtypes.TerrainMap {
 	tm := simtypes.NewTerrainMap(simtypes.DefaultMapWidth, simtypes.DefaultMapHeight)
 	generator := layers.NewGenerator(tm.Width, tm.Height, rng.NewRNG(worldSeed))
 
-	artifacts, err := generator.GenerateLayers(worldSeed, tm)
+	artifacts, err := generator.GenerateLayers(worldSeed)
 	if err != nil {
 		t.Fatalf("GenerateLayers returned error: %v", err)
 	}

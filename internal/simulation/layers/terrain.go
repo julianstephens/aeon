@@ -17,10 +17,10 @@ const (
 	MountainFertilityPenalty   = 0.15
 	MountainNeighborhoodWeight = 0.15
 
-	ForestMoistureWeight       = 0.55
-	ForestFertilityWeight      = 0.25
-	ForestElevationWeight      = 0.15
-	ForestNeighborhoodWeight   = 0.05
+	ForestMoistureWeight     = 0.55
+	ForestFertilityWeight    = 0.25
+	ForestElevationWeight    = 0.15
+	ForestNeighborhoodWeight = 0.05
 
 	PlainsFertilityWeight    = 0.40
 	PlainsMoistureWeight     = 0.20
@@ -56,7 +56,7 @@ func NewTerrainClassifier(tm *simtypes.TerrainMap) *TerrainClassifier {
 // Classify assigns terrain synchronously from the scalar layers and the
 // previous iteration's terrain state. Physical fields dominate the score;
 // neighborhood terms provide only weak spatial reinforcement.
-func (tc *TerrainClassifier) Classify(elevation, moisture, fertility, _ *simtypes.Layer) error {
+func (tc *TerrainClassifier) Classify(elevation, moisture, fertility *simtypes.Layer) error {
 	logger.Debug("building initial terrain layer")
 	if err := tc.seedInitialTerrain(elevation, moisture, fertility); err != nil {
 		return err
@@ -78,7 +78,7 @@ func (tc *TerrainClassifier) Classify(elevation, moisture, fertility, _ *simtype
 			}
 		}
 
-		tc.tm.ApplyTerrain(&next)
+		tc.tm.ApplyTerrain(next)
 	}
 
 	return nil
@@ -139,7 +139,10 @@ func (s NeighborTerrainStats) fraction(count int) float64 {
 	return float64(count) / float64(s.Total)
 }
 
-func (tc *TerrainClassifier) classifyCell(elevation, moisture, fertility float64, neighbors NeighborTerrainStats) simtypes.TerrainType {
+func (tc *TerrainClassifier) classifyCell(
+	elevation, moisture, fertility float64,
+	neighbors NeighborTerrainStats,
+) simtypes.TerrainType {
 	if elevation <= WaterElevationThreshold {
 		return simtypes.TerrainTypeWater
 	}
@@ -151,7 +154,10 @@ func (tc *TerrainClassifier) classifyCell(elevation, moisture, fertility float64
 	return scores.maxTerrain()
 }
 
-func (tc *TerrainClassifier) scoreCell(elevation, moisture, fertility float64, neighbors NeighborTerrainStats) TerrainScores {
+func (tc *TerrainClassifier) scoreCell(
+	elevation, moisture, fertility float64,
+	neighbors NeighborTerrainStats,
+) TerrainScores {
 	return TerrainScores{
 		Water: waterScore(
 			elevation,

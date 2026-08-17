@@ -23,7 +23,7 @@ func NewPipeline(width, height int, baseRng *rng.RNG) *Pipeline {
 // Run executes terrain layer generation, applies the generated scalar layers,
 // and classifies the final terrain map.
 func (p *Pipeline) Run(worldSeed [32]byte) (*simtypes.TerrainMap, error) {
-	artifacts, err := p.generator.GenerateLayers(worldSeed, p.tm)
+	artifacts, err := p.generator.GenerateLayers(worldSeed)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +36,6 @@ func (p *Pipeline) Run(worldSeed [32]byte) (*simtypes.TerrainMap, error) {
 		artifacts.Elevation,
 		artifacts.Moisture,
 		artifacts.Fertility,
-		artifacts.Terrain,
 	); err != nil {
 		return nil, err
 	}

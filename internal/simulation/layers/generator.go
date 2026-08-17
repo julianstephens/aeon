@@ -24,7 +24,6 @@ type LayerArtifacts struct {
 	Elevation *simtypes.Layer
 	Moisture  *simtypes.Layer
 	Fertility *simtypes.Layer
-	Terrain   *simtypes.Layer
 }
 
 func NewGenerator(width, height int, randomSource *rng.RNG) *Generator {
@@ -35,7 +34,7 @@ func NewGenerator(width, height int, randomSource *rng.RNG) *Generator {
 	}
 }
 
-func (g *Generator) GenerateLayers(worldSeed [32]byte, _ *simtypes.TerrainMap) (LayerArtifacts, error) {
+func (g *Generator) GenerateLayers(worldSeed [32]byte) (LayerArtifacts, error) {
 	logger.WithFields(map[string]interface{}{"width": g.width, "height": g.height}).Debug("generating elevation layer")
 	elevationLayer := generateElevationLayer(g, worldSeed)
 
@@ -45,15 +44,10 @@ func (g *Generator) GenerateLayers(worldSeed [32]byte, _ *simtypes.TerrainMap) (
 	logger.WithFields(map[string]interface{}{"width": g.width, "height": g.height}).Debug("generating fertility layer")
 	fertilityLayer := generateFertilityLayer(g, worldSeed, elevationLayer, moistureLayer)
 
-	// Terrain classification is owned by TerrainClassifier. The generator only
-	// produces continuous scalar layers.
-	terrainLayer := simtypes.NewLayer(g.width, g.height)
-
 	return LayerArtifacts{
 		Elevation: elevationLayer,
 		Moisture:  moistureLayer,
 		Fertility: fertilityLayer,
-		Terrain:   terrainLayer,
 	}, nil
 }
 
@@ -95,18 +89,6 @@ func generateFertilityLayer(
 	}
 
 	return fertilityLayer
-}
-
-func normalizeLayer(layer *simtypes.Layer) *simtypes.Layer {
-	minValue, maxValue := minMax(layer)
-	if maxValue == minValue {
-		return layer
-	}
-
-	for i, value := range layer.Values {
-		layer.Values[i] = clamp((value - minValue) / (maxValue - minValue))
-	}
-	return layer
 }
 
 func minMax(layer *simtypes.Layer) (float64, float64) {

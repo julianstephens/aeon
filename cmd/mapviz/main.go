@@ -36,10 +36,10 @@ type AnalyzeCommand struct {
 }
 
 type RenderCommand struct {
-	Seed   uint64    `help:"Terrain generation seed." default:"42"`
-	Layer  LayerType `help:"Layer to render." enum:"terrain,elevation,moisture,fertility,food-capacity" default:"elevation"`
+	Seed   uint64    `help:"Terrain generation seed."        default:"42"`
+	Layer  LayerType `help:"Layer to render."                default:"elevation"   enum:"terrain,elevation,moisture,fertility,food-capacity"`
 	Scale  int       `help:"Scale factor for each map cell." default:"8"`
-	Output string    `help:"Output PNG path." default:"terrain.png"`
+	Output string    `help:"Output PNG path."                default:"terrain.png"`
 }
 
 func main() {
@@ -113,8 +113,14 @@ func analyze(seed uint64) error {
 	fmt.Printf("Map: %dx%d\n\n", tm.Width, tm.Height)
 
 	printScalarStats("Elevation", *elevation)
-	printScalarStats("Moisture", *layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 { return cell.Moisture }))
-	printScalarStats("Fertility", *layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 { return cell.Fertility }))
+	printScalarStats(
+		"Moisture",
+		*layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 { return cell.Moisture }),
+	)
+	printScalarStats(
+		"Fertility",
+		*layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 { return cell.Fertility }),
+	)
 	printTerrainDistribution(*tm)
 	printConnectedRegions(*tm)
 	printTerrainBoundaries(*tm)
@@ -210,7 +216,14 @@ func printTerrainBoundaries(tm simtypes.TerrainMap) {
 			percent = float64(boundaryCells) / float64(total) * 100
 		}
 
-		fmt.Printf("  %-9s cells=%d (%5.1f%%) components=%d largest=%d\n", terrain.String()+":", boundaryCells, percent, len(components), largest)
+		fmt.Printf(
+			"  %-9s cells=%d (%5.1f%%) components=%d largest=%d\n",
+			terrain.String()+":",
+			boundaryCells,
+			percent,
+			len(components),
+			largest,
+		)
 	}
 	fmt.Println()
 }
