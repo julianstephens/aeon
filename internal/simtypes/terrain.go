@@ -82,14 +82,13 @@ func (tt TerrainType) String() string {
 }
 
 type TerrainCell struct {
-	Location         Position
-	Terrain          TerrainType
-	Elevation        float64
-	Moisture         float64
-	Fertility        float64
-	FoodCapacity     float64
-	CarryingCapacity float64
-	Population       float64
+	Location     Position
+	Terrain      TerrainType
+	Elevation    float64
+	Moisture     float64
+	Fertility    float64
+	FoodCapacity float64
+	Population   float64
 }
 
 type TerrainMap struct {
@@ -195,7 +194,6 @@ func (tm *TerrainMap) ApplyFoodCapacity(layer *Layer) {
 			foodCapacity := layer.Get(x, y)
 			cell := tm.GetCell(x, y)
 			cell.FoodCapacity = foodCapacity
-			cell.CarryingCapacity = foodCapacity * MaxPopulationPerCell
 			tm.SetCell(x, y, *cell)
 		}
 	}
