@@ -164,7 +164,7 @@ func (a *App) displaySpeed() float64 {
 func (a *App) mapViewport() image.Rectangle {
 	panel := image.Rect(sidebarWidth, headerHeight, windowWidth-inspectorWidth, windowHeight-footerHeight)
 	padding := 16
-	top := panel.Min.Y + 40
+	top := panel.Min.Y + 52
 	availableWidth := panel.Dx() - 2*padding
 	availableHeight := panel.Max.Y - top - padding
 	size := availableWidth
