@@ -9,8 +9,10 @@ import (
 )
 
 type PopulationParameters struct {
-	GrowthRate      float64
-	MaxCellCapacity float64
+	GrowthRate       float64
+	StarvationRate   float64
+	MigrationRate    float64
+	MaxCellCapacity  float64
 }
 
 type PopulationModel struct {
@@ -64,7 +66,7 @@ func (pm *PopulationModel) SeedPopulation(terrainMap *simtypes.TerrainMap, popul
 			continue
 		}
 
-		capacity := int(math.Floor(cell.FoodCapacity * pm.params.MaxCellCapacity))
+		capacity := int(math.Floor(pm.carryingCapacity(cell)))
 		if capacity <= 0 {
 			continue
 		}
@@ -102,17 +104,30 @@ func (pm *PopulationModel) simulateYear(terrainMap *simtypes.TerrainMap) {
 		"year":       pm.tick,
 		"population": pm.TotalPopulation(terrainMap),
 	}).Debug("simulating population dynamics for year")
+
 	pm.growPopulation(terrainMap)
+	pm.applyStarvation(terrainMap)
+	pm.applyMigration(terrainMap)
+
 	logger.WithFields(map[string]interface{}{
 		"year":       pm.tick,
 		"population": pm.TotalPopulation(terrainMap),
 	}).Debug("population dynamics simulation completed for year")
 }
 
+// carryingCapacity converts the environmental food-capacity score into the
+// maximum sustainable population for a cell under this population model.
+func (pm *PopulationModel) carryingCapacity(cell *simtypes.TerrainCell) float64 {
+	if cell == nil || !cell.Terrain.IsPassable() || cell.FoodCapacity <= 0 || pm.params.MaxCellCapacity <= 0 {
+		return 0
+	}
+	return cell.FoodCapacity * pm.params.MaxCellCapacity
+}
+
 func (pm *PopulationModel) growPopulation(terrainMap *simtypes.TerrainMap) {
 	for i := range terrainMap.Cells {
 		cell := &terrainMap.Cells[i]
-		capacity := cell.FoodCapacity * pm.params.MaxCellCapacity
+		capacity := pm.carryingCapacity(cell)
 		if capacity <= 0 {
 			cell.Population = 0
 			continue
@@ -125,6 +140,112 @@ func (pm *PopulationModel) growPopulation(terrainMap *simtypes.TerrainMap) {
 			cell.Population = 0
 		}
 	}
+}
+
+func (pm *PopulationModel) applyStarvation(terrainMap *simtypes.TerrainMap) {
+	if pm.params.StarvationRate <= 0 {
+		return
+	}
+
+	for i := range terrainMap.Cells {
+		cell := &terrainMap.Cells[i]
+		capacity := pm.carryingCapacity(cell)
+		if capacity <= 0 {
+			cell.Population = 0
+			continue
+		}
+
+		excess := cell.Population - capacity
+		if excess <= 0 {
+			continue
+		}
+
+		// Only the population above carrying capacity is exposed to the
+		// starvation mortality term. Logistic growth already reduces growth
+		// as a population approaches capacity.
+		mortality := excess * pm.params.StarvationRate
+		cell.Population -= mortality
+		if cell.Population < 0 {
+			cell.Population = 0
+		}
+	}
+}
+
+type migrationFlow struct {
+	from int
+	to   int
+	amount float64
+}
+
+func (pm *PopulationModel) applyMigration(terrainMap *simtypes.TerrainMap) {
+	if pm.params.MigrationRate <= 0 {
+		return
+	}
+
+	flows := make([]migrationFlow, 0)
+	for i := range terrainMap.Cells {
+		cell := &terrainMap.Cells[i]
+		capacity := pm.carryingCapacity(cell)
+		if capacity <= 0 || cell.Population <= capacity {
+			continue
+		}
+
+		excess := cell.Population - capacity
+		available := excess * pm.params.MigrationRate
+		if available <= 0 {
+			continue
+		}
+
+		neighbors := tmNeighbors(terrainMap, i)
+		candidates := make([]int, 0, len(neighbors))
+		for _, neighbor := range neighbors {
+			neighborCell := &terrainMap.Cells[neighbor]
+			neighborCapacity := pm.carryingCapacity(neighborCell)
+			room := neighborCapacity - neighborCell.Population
+			if room > 0 {
+				candidates = append(candidates, neighbor)
+			}
+		}
+		if len(candidates) == 0 {
+			continue
+		}
+
+		roomPerNeighbor := available / float64(len(candidates))
+		for _, neighbor := range candidates {
+			neighborCell := &terrainMap.Cells[neighbor]
+			room := pm.carryingCapacity(neighborCell) - neighborCell.Population
+			amount := minFloat(roomPerNeighbor, room)
+			if amount > 0 {
+				flows = append(flows, migrationFlow{from: i, to: neighbor, amount: amount})
+			}
+		}
+	}
+
+	for _, flow := range flows {
+		terrainMap.Cells[flow.from].Population -= flow.amount
+		terrainMap.Cells[flow.to].Population += flow.amount
+	}
+}
+
+func tmNeighbors(terrainMap *simtypes.TerrainMap, index int) []int {
+	x := index % terrainMap.Width
+	y := index / terrainMap.Width
+	neighbors := make([]int, 0, 4)
+	for _, position := range [][2]int{{x - 1, y}, {x + 1, y}, {x, y - 1}, {x, y + 1}} {
+		nx, ny := position[0], position[1]
+		if nx < 0 || nx >= terrainMap.Width || ny < 0 || ny >= terrainMap.Height {
+			continue
+		}
+		neighbors = append(neighbors, ny*terrainMap.Width+nx)
+	}
+	return neighbors
+}
+
+func minFloat(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func selectSeedCells(cells []seededCell, terrainMap *simtypes.TerrainMap, population int) []seededCell {
