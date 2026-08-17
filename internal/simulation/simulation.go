@@ -36,7 +36,7 @@ func Run(c *cliutil.Console, seed string, years int) error {
 		"population": w.PopulationCount(),
 	}).Debug("world initialized")
 	if c != nil {
-		printYearlyReport(c, w.Year(), w.terrainMap, w.populationModel.params.MaxCellCapacity)
+		printYearlyReport(w.Year(), w.terrainMap, w.populationModel.params.MaxCellCapacity)
 	}
 
 	logger.WithFields(map[string]any{
@@ -46,8 +46,8 @@ func Run(c *cliutil.Console, seed string, years int) error {
 	for range years {
 		w.populationModel.AdvanceOneYear(w.terrainMap)
 		if c != nil && shouldReportYear(w.Year(), years) {
-			_ = c.Info("")
-			printYearlyReport(c, w.Year(), w.terrainMap, w.populationModel.params.MaxCellCapacity)
+			println("")
+			printYearlyReport(w.Year(), w.terrainMap, w.populationModel.params.MaxCellCapacity)
 		}
 	}
 	logger.Debug("simulation run completed")
@@ -64,15 +64,15 @@ func shouldReportYear(year, totalYears int) bool {
 	return year%ReportIntervalYears == 0
 }
 
-func printYearlyReport(c *cliutil.Console, year int, terrainMap *simtypes.TerrainMap, maxCellCapacity float64) {
+func printYearlyReport(year int, terrainMap *simtypes.TerrainMap, maxCellCapacity float64) {
 	stats := summarizeTerrainPopulation(terrainMap, maxCellCapacity)
-	_ = c.Info(fmt.Sprintf("Year %d", year))
-	_ = c.Info("Population")
-	_ = c.Info(fmt.Sprintf("  total:              %d", stats.totalPopulation))
-	_ = c.Info(fmt.Sprintf("  carrying capacity:  %d", stats.carryingCapacity))
-	_ = c.Info(fmt.Sprintf("  utilization:        %.1f%%", stats.utilizationPercent))
-	_ = c.Info(fmt.Sprintf("  occupied cells:     %d", stats.occupiedCells))
-	_ = c.Info(fmt.Sprintf("  over-capacity cells: %d", stats.overCapacityCells))
+	println(fmt.Sprintf("Year %d", year))
+	println("Population")
+	println(fmt.Sprintf("  total:              %d", stats.totalPopulation))
+	println(fmt.Sprintf("  carrying capacity:  %d", stats.carryingCapacity))
+	println(fmt.Sprintf("  utilization:        %.1f%%", stats.utilizationPercent))
+	println(fmt.Sprintf("  occupied cells:     %d", stats.occupiedCells))
+	println(fmt.Sprintf("  over-capacity cells: %d", stats.overCapacityCells))
 }
 
 type terrainPopulationSummary struct {
