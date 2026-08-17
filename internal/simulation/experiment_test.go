@@ -134,6 +134,28 @@ func TestExperimentRun_DifferentSeedsProduceDifferentWorlds(t *testing.T) {
 	}
 }
 
+func TestExperimentRun_ZeroMigration_SeedsBroadlyAtInitialization(t *testing.T) {
+	config := DefaultExperimentConfig()
+	config.Seed = "42"
+	config.InitialPopulation = 10000
+	config.MigrationRate = 0
+	config.Years = 1
+	config.Interval = 1
+
+	result, err := NewExperiment(config).RunE()
+	if err != nil {
+		t.Fatalf("RunE returned error: %v", err)
+	}
+
+	if len(result.Samples) == 0 {
+		t.Fatal("expected at least one sample")
+	}
+
+	if result.Samples[0].OccupiedCells <= 959 {
+		t.Fatalf("expected broader initialization than clustered seeding, got %d occupied cells", result.Samples[0].OccupiedCells)
+	}
+}
+
 func TestExperimentRun_FailsWhenInitialPopulationCannotBeSeeded(t *testing.T) {
 	config := DefaultExperimentConfig()
 	config.Seed = "experiment-insufficient-capacity"
