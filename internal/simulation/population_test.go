@@ -9,7 +9,7 @@ import (
 
 func TestPopulationModel_SeedPopulation_WeightsSelectedCentersByFoodCapacity(t *testing.T) {
 	pm := simulation.NewPopulationModel(simulation.PopulationParameters{MaxCellCapacity: 100})
-	tm := terrainMapWithFoodCapacities(1, 2, 3)
+	tm := terrainMapWithFoodCapacities(10, 1, 9, 1, 1, 1, 1, 1, 1, 1)
 
 	allocated := pm.SeedPopulation(tm, 20)
 	if allocated != 20 {
@@ -19,9 +19,9 @@ func TestPopulationModel_SeedPopulation_WeightsSelectedCentersByFoodCapacity(t *
 	if tm.Cells[1].Population != 0 {
 		t.Fatalf("expected unselected center to remain empty, got %.0f", tm.Cells[1].Population)
 	}
-	if tm.Cells[0].Population != 5 || tm.Cells[2].Population != 15 {
+	if tm.Cells[0].Population != 11 || tm.Cells[2].Population != 9 {
 		t.Fatalf(
-			"unexpected seeded distribution: got [%.0f %.0f], want [5 15]",
+			"unexpected seeded distribution: got [%.0f %.0f], want [11 9]",
 			tm.Cells[0].Population,
 			tm.Cells[2].Population,
 		)
