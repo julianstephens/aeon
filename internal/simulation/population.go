@@ -125,11 +125,7 @@ func (pm *PopulationModel) PopulationPressureSummary(terrainMap *simtypes.Terrai
 			continue
 		}
 
-		pressure := 0.0
-		if capacity > 0 {
-			pressure = cell.Population / capacity * 100
-		}
-
+		pressure := cell.Population / capacity * 100
 		switch {
 		case pressure < 25:
 			summary.Under25++
@@ -190,7 +186,6 @@ func (pm *PopulationModel) growPopulation(terrainMap *simtypes.TerrainMap) {
 
 		growth := cell.Population * pm.params.GrowthRate * (1 - cell.Population/capacity)
 		cell.Population += growth
-
 		if cell.Population < 0 {
 			cell.Population = 0
 		}
@@ -215,9 +210,6 @@ func (pm *PopulationModel) applyStarvation(terrainMap *simtypes.TerrainMap) {
 			continue
 		}
 
-		// Only the population above carrying capacity is exposed to the
-		// starvation mortality term. Logistic growth already reduces growth
-		// as a population approaches capacity.
 		mortality := excess * pm.params.StarvationRate
 		cell.Population -= mortality
 		if cell.Population < 0 {
@@ -299,11 +291,10 @@ func summarizeMigration(flows []migrationFlow, terrainMap *simtypes.TerrainMap) 
 		return MigrationSummary{}
 	}
 
-	summary := MigrationSummary{Moved: 0, SourceCells: 0, DestinationCells: 0, AverageDistance: 0, MaxDistance: 0}
+	summary := MigrationSummary{}
 	sourceSet := make(map[int]struct{}, len(flows))
 	destinationSet := make(map[int]struct{}, len(flows))
 	totalDistance := 0.0
-	maxDistance := 0
 	for _, flow := range flows {
 		summary.Moved += flow.amount
 		sourceSet[flow.from] = struct{}{}
@@ -313,17 +304,14 @@ func summarizeMigration(flows []migrationFlow, terrainMap *simtypes.TerrainMap) 
 		to := terrainMap.Cells[flow.to].Location
 		distance := abs(from.X-to.X) + abs(from.Y-to.Y)
 		totalDistance += float64(distance)
-		if distance > maxDistance {
-			maxDistance = distance
+		if distance > summary.MaxDistance {
+			summary.MaxDistance = distance
 		}
 	}
 
 	summary.SourceCells = len(sourceSet)
 	summary.DestinationCells = len(destinationSet)
-	summary.MaxDistance = maxDistance
-	if len(flows) > 0 {
-		summary.AverageDistance = totalDistance / float64(len(flows))
-	}
+	summary.AverageDistance = totalDistance / float64(len(flows))
 	return summary
 }
 
@@ -363,7 +351,7 @@ func selectSeedCells(cells []seededCell, terrainMap *simtypes.TerrainMap, popula
 		return cells[i].weight > cells[j].weight
 	})
 
-	selected := make([]seededCell, 0, seedCount)
+	selected := make([]seededCell, 0, len(cells))
 	mapSpan := max(terrainMap.Width, terrainMap.Height)
 	minDistance := max(1, mapSpan/5)
 	for _, candidate := range cells {
@@ -384,13 +372,38 @@ func selectSeedCells(cells []seededCell, terrainMap *simtypes.TerrainMap, popula
 		if tooClose {
 			continue
 		}
-
 		selected = append(selected, candidate)
 	}
 
 	if len(selected) == 0 {
 		selected = append(selected, cells[0])
 	}
+
+	// Spatial separation is a preference, not a capacity constraint. If the
+	// requested population cannot fit in the initial settlement centers, add
+	// the next-best cells until enough carrying capacity is available.
+	capacity := 0
+	for _, cell := range selected {
+		capacity += cell.capacity
+	}
+	for _, candidate := range cells {
+		if capacity >= population {
+			break
+		}
+		alreadySelected := false
+		for _, selectedCell := range selected {
+			if selectedCell.index == candidate.index {
+				alreadySelected = true
+				break
+			}
+		}
+		if alreadySelected {
+			continue
+		}
+		selected = append(selected, candidate)
+		capacity += candidate.capacity
+	}
+
 	return selected
 }
 
@@ -446,11 +459,11 @@ func distributeSeedPopulation(cells []seededCell, targetPopulation int) int {
 
 		if remaining > 0 {
 			sort.Slice(remainders, func(i, j int) bool {
-				if remainders[i].frac == remainders[j].frac {
-					return remainders[i].cellIndex < remainders[j].cellIndex
-				}
-				return remainders[i].frac > remainders[j].frac
-			})
+			if remainders[i].frac == remainders[j].frac {
+				return remainders[i].cellIndex < remainders[j].cellIndex
+			}
+			return remainders[i].frac > remainders[j].frac
+		})
 
 			for _, rem := range remainders {
 				if remaining <= 0 {
