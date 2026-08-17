@@ -7,8 +7,6 @@ const (
 	DefaultMapHeight = 65
 
 	RoughnessDelta = 0.6
-
-	MaxPopulationPerCell = 20
 )
 
 type Position struct {
@@ -162,6 +160,7 @@ func (tm *TerrainMap) ApplyMoisture(layer *Layer) {
 		}
 	}
 }
+
 func (tm *TerrainMap) ApplyFertility(layer *Layer) {
 	for x := 0; x < tm.Width; x++ {
 		for y := 0; y < tm.Height; y++ {
