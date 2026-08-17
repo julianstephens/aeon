@@ -7,6 +7,8 @@ const (
 	DefaultMapHeight = 65
 
 	RoughnessDelta = 0.6
+
+	MaxPopulationPerCell = 20
 )
 
 type Position struct {
@@ -86,6 +88,7 @@ type TerrainCell struct {
 	Moisture     float64
 	Fertility    float64
 	FoodCapacity float64
+	Population   float64
 }
 
 type TerrainMap struct {

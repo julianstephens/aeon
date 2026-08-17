@@ -18,8 +18,8 @@ const (
 var (
 	BaselineProductivity = map[simtypes.TerrainType]float64{
 		simtypes.TerrainTypeWater:    0.0,
-		simtypes.TerrainTypePlains:   0.8,
-		simtypes.TerrainTypeForest:   0.6,
+		simtypes.TerrainTypePlains:   0.85,
+		simtypes.TerrainTypeForest:   0.50,
 		simtypes.TerrainTypeMountain: 0.05,
 	}
 )

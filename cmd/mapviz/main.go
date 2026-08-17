@@ -126,10 +126,7 @@ func analyze(seed uint64) error {
 		"Fertility",
 		*layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 { return cell.Fertility }),
 	)
-	printScalarStats(
-		"Food Capacity",
-		*layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 { return cell.FoodCapacity }),
-	)
+	printFoodCapacityBreakdown(*tm)
 	printTerrainDistribution(diagnostics, *tm)
 	printConnectedRegions(diagnostics)
 	printWorldViability(diagnostics, rules, validationErr, tm.Width*tm.Height)
@@ -175,6 +172,118 @@ func printScalarStats(name string, layer simtypes.Layer) {
 	fmt.Printf("  max:    %.3f\n", maxValue)
 	fmt.Printf("  mean:   %.3f\n", mean)
 	fmt.Printf("  stddev: %.3f\n\n", math.Sqrt(variance))
+}
+
+type terrainFoodCapacityStats struct {
+	Mean float64
+	Max  float64
+}
+
+func printFoodCapacityBreakdown(tm simtypes.TerrainMap) {
+	fmt.Println("Food Capacity")
+	fmt.Println("  overall:")
+	printScalarStatsIndented(
+		"    ",
+		*layerFromTerrain(tm, func(cell *simtypes.TerrainCell) float64 { return cell.FoodCapacity }),
+	)
+
+	fmt.Println("  by terrain:")
+	statsByTerrain := foodCapacityStatsByTerrain(tm)
+	for _, terrain := range []simtypes.TerrainType{
+		simtypes.TerrainTypePlains,
+		simtypes.TerrainTypeForest,
+		simtypes.TerrainTypeMountain,
+		simtypes.TerrainTypeWater,
+	} {
+		stats := statsByTerrain[terrain]
+		fmt.Printf("    %s:\n", terrain.String())
+		fmt.Printf("      mean: %.3f\n", stats.Mean)
+		fmt.Printf("      max:  %.3f\n", stats.Max)
+		fmt.Println()
+	}
+}
+
+func printScalarStatsIndented(prefix string, layer simtypes.Layer) {
+	minValue := math.Inf(1)
+	maxValue := math.Inf(-1)
+	var sum float64
+	count := layer.Width * layer.Height
+
+	for y := 0; y < layer.Height; y++ {
+		for x := 0; x < layer.Width; x++ {
+			value := layer.Get(x, y)
+			minValue = minFloat(minValue, value)
+			maxValue = maxFloat(maxValue, value)
+			sum += value
+		}
+	}
+
+	mean := 0.0
+	if count > 0 {
+		mean = sum / float64(count)
+	}
+
+	var variance float64
+	if count > 0 {
+		for y := 0; y < layer.Height; y++ {
+			for x := 0; x < layer.Width; x++ {
+				delta := layer.Get(x, y) - mean
+				variance += delta * delta
+			}
+		}
+		variance /= float64(count)
+	}
+
+	fmt.Printf("%smin:    %.3f\n", prefix, minValue)
+	fmt.Printf("%smax:    %.3f\n", prefix, maxValue)
+	fmt.Printf("%smean:   %.3f\n", prefix, mean)
+	fmt.Printf("%sstddev: %.3f\n\n", prefix, math.Sqrt(variance))
+}
+
+func foodCapacityStatsByTerrain(tm simtypes.TerrainMap) map[simtypes.TerrainType]terrainFoodCapacityStats {
+	stats := map[simtypes.TerrainType]terrainFoodCapacityStats{
+		simtypes.TerrainTypePlains:   {Mean: 0, Max: 0},
+		simtypes.TerrainTypeForest:   {Mean: 0, Max: 0},
+		simtypes.TerrainTypeMountain: {Mean: 0, Max: 0},
+		simtypes.TerrainTypeWater:    {Mean: 0, Max: 0},
+	}
+
+	counts := map[simtypes.TerrainType]int{
+		simtypes.TerrainTypePlains:   0,
+		simtypes.TerrainTypeForest:   0,
+		simtypes.TerrainTypeMountain: 0,
+		simtypes.TerrainTypeWater:    0,
+	}
+
+	for y := 0; y < tm.Height; y++ {
+		for x := 0; x < tm.Width; x++ {
+			cell := tm.GetCell(x, y)
+			if cell == nil {
+				continue
+			}
+			terrain := cell.Terrain
+			if _, ok := stats[terrain]; !ok {
+				continue
+			}
+			counts[terrain]++
+			stats[terrain] = terrainFoodCapacityStats{
+				Mean: stats[terrain].Mean + cell.FoodCapacity,
+				Max:  maxFloat(stats[terrain].Max, cell.FoodCapacity),
+			}
+		}
+	}
+
+	for terrain, count := range counts {
+		if count == 0 {
+			continue
+		}
+		stats[terrain] = terrainFoodCapacityStats{
+			Mean: stats[terrain].Mean / float64(count),
+			Max:  stats[terrain].Max,
+		}
+	}
+
+	return stats
 }
 
 func printTerrainDistribution(diagnostics layers.WorldDiagnostics, tm simtypes.TerrainMap) {
@@ -274,7 +383,7 @@ func printTerrainBoundaries(tm simtypes.TerrainMap) {
 		}
 
 		fmt.Printf(
-			"  %-9s cells=%d (%5.1f%%) components=%d largest=%d\n",
+			"  %-9s cells=%d (%.1f%%) components=%d largest=%d\n",
 			terrain.String()+":",
 			boundaryCells,
 			percent,

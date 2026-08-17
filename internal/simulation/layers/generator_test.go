@@ -143,6 +143,26 @@ func TestGenerator_GenerateTerrainMap_FertilityTracksMoistureAndMidElevation(t *
 	}
 }
 
+func TestGenerator_FoodCapacityTerrainBaselinesCreateClearEcologicalGradient(t *testing.T) {
+	plains := layers.BaselineProductivity[simtypes.TerrainTypePlains]
+	forest := layers.BaselineProductivity[simtypes.TerrainTypeForest]
+	mountain := layers.BaselineProductivity[simtypes.TerrainTypeMountain]
+	water := layers.BaselineProductivity[simtypes.TerrainTypeWater]
+
+	if plains <= forest {
+		t.Fatalf("expected plains to be more productive than forest: plains=%.3f forest=%.3f", plains, forest)
+	}
+	if forest <= mountain {
+		t.Fatalf("expected forest to stay above mountain: forest=%.3f mountain=%.3f", forest, mountain)
+	}
+	if mountain >= 0.15 {
+		t.Fatalf("expected mountain productivity to remain low, got %.3f", mountain)
+	}
+	if water != 0.0 {
+		t.Fatalf("expected water productivity to be zero, got %.3f", water)
+	}
+}
+
 func generateTerrainMap(t *testing.T, worldSeed [32]byte) simtypes.TerrainMap {
 	t.Helper()
 
