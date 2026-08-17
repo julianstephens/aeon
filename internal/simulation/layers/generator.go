@@ -60,13 +60,13 @@ func (g *Generator) GenerateLayers(worldSeed [32]byte, _ *simtypes.TerrainMap) (
 func generateElevationLayer(g *Generator, worldSeed [32]byte) *simtypes.Layer {
 	elevationSeed := rng.DeriveSeed(worldSeed, "elevation")
 	elevationGenerator := NewDSGenerator(g.width, rng.NewRNG(elevationSeed))
-	return normalizeLayer(elevationGenerator.Generate())
+	return normalizeDSOutput(elevationGenerator.Generate())
 }
 
 func generateMoistureLayer(g *Generator, worldSeed [32]byte) *simtypes.Layer {
 	moistureSeed := rng.DeriveSeed(worldSeed, "moisture")
 	moistureGenerator := NewDSGenerator(g.width, rng.NewRNG(moistureSeed))
-	return normalizeLayer(moistureGenerator.Generate())
+	return normalizeDSOutput(moistureGenerator.Generate())
 }
 
 func generateFertilityLayer(

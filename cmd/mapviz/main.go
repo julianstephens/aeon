@@ -113,8 +113,8 @@ func analyze(seed uint64) error {
 	fmt.Printf("Map: %dx%d\n\n", tm.Width, tm.Height)
 
 	printScalarStats("Elevation", *elevation)
-	printScalarStats("Moisture", layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 { return cell.Moisture }))
-	printScalarStats("Fertility", layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 { return cell.Fertility }))
+	printScalarStats("Moisture", *layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 { return cell.Moisture }))
+	printScalarStats("Fertility", *layerFromTerrain(*tm, func(cell *simtypes.TerrainCell) float64 { return cell.Fertility }))
 	printTerrainDistribution(*tm)
 	printConnectedRegions(*tm)
 	printTerrainBoundaries(*tm)
@@ -417,7 +417,7 @@ func orthogonalNeighbors(position simtypes.Position) []simtypes.Position {
 	}
 }
 
-func layerFromTerrain(tm simtypes.TerrainMap, valueAt func(*simtypes.TerrainCell) float64) simtypes.Layer {
+func layerFromTerrain(tm simtypes.TerrainMap, valueAt func(*simtypes.TerrainCell) float64) *simtypes.Layer {
 	layer := simtypes.NewLayer(tm.Width, tm.Height)
 	for y := 0; y < tm.Height; y++ {
 		for x := 0; x < tm.Width; x++ {
@@ -426,7 +426,7 @@ func layerFromTerrain(tm simtypes.TerrainMap, valueAt func(*simtypes.TerrainCell
 			}
 		}
 	}
-	return *layer
+	return layer
 }
 
 func generateTerrainMap(seed uint64) (*simtypes.TerrainMap, *simtypes.Layer, error) {
@@ -564,4 +564,18 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func sanitizeOutputPath(path string) (string, error) {
+	if filepath.IsAbs(path) {
+		return "", fmt.Errorf("absolute paths are not allowed")
+	}
+	if filepath.Ext(path) != ".png" {
+		return "", fmt.Errorf("output file must have .png extension")
+	}
+	cleanPath := filepath.Clean(path)
+	if cleanPath == "." || cleanPath == ".." || cleanPath == "" {
+		return "", fmt.Errorf("invalid output path")
+	}
+	return cleanPath, nil
 }

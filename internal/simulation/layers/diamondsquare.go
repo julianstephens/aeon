@@ -41,7 +41,7 @@ func (ds *DSGenerator) Generate() *simtypes.Layer {
 		roughness *= simtypes.RoughnessDelta
 	}
 
-	return normalizeLayer(m)
+	return normalizeDSOutput(m)
 }
 
 func (ds *DSGenerator) initializeCorners(m *simtypes.Layer) {
@@ -109,15 +109,14 @@ func (ds *DSGenerator) getAverage(m *simtypes.Layer, x, y, step int, offsets [][
 	return sum / float64(count)
 }
 
-func normalizeLayer(layer *simtypes.Layer) *simtypes.Layer {
+func normalizeDSOutput(layer *simtypes.Layer) *simtypes.Layer {
 	min, max := minMax(layer)
 	normalizedLayer := simtypes.NewLayer(layer.Width, layer.Height)
 
 	for x := 0; x < layer.Width; x++ {
 		for y := 0; y < layer.Height; y++ {
 			value := layer.Get(x, y)
-			normalizedValue := clamp(normalize(value, min, max))
-			normalizedLayer.Set(x, y, normalizedValue)
+			normalizedLayer.Set(x, y, clamp((value-min)/(max-min)))
 		}
 	}
 	return normalizedLayer
