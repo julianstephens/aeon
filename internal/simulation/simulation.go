@@ -21,10 +21,14 @@ func Run(c *cliutil.Console, seed string, years int) error {
 		"years": years,
 	}).Debug("starting simulation run. creating world")
 
-	w, err := NewWorld(seed, PopulationParameters{
+	populationParams := PopulationParameters{
 		GrowthRate:      0.025,
+		StarvationRate:  0.10,
+		MigrationRate:   0.07,
 		MaxCellCapacity: 30,
-	})
+	}
+
+	w, err := NewWorld(seed, populationParams)
 	if err != nil {
 		logger.Errorf("failed to initialize world: %v", err)
 		return err
@@ -34,7 +38,7 @@ func Run(c *cliutil.Console, seed string, years int) error {
 		"population": w.PopulationCount(),
 	}).Debug("world initialized")
 	if c != nil {
-		printYearlyReport(w.Year(), w.terrainMap, w.populationModel.params.MaxCellCapacity)
+		printYearlyReport(w.Year(), w.terrainMap, w.populationModel)
 	}
 
 	logger.WithFields(map[string]any{
@@ -45,7 +49,7 @@ func Run(c *cliutil.Console, seed string, years int) error {
 		w.populationModel.AdvanceOneYear(w.terrainMap)
 		if c != nil && shouldReportYear(w.Year(), years) {
 			println("")
-			printYearlyReport(w.Year(), w.terrainMap, w.populationModel.params.MaxCellCapacity)
+			printYearlyReport(w.Year(), w.terrainMap, w.populationModel)
 		}
 	}
 	logger.Debug("simulation run completed")
@@ -62,8 +66,8 @@ func shouldReportYear(year, totalYears int) bool {
 	return year%ReportIntervalYears == 0
 }
 
-func printYearlyReport(year int, terrainMap *simtypes.TerrainMap, maxCellCapacity float64) {
-	stats := summarizeTerrainPopulation(terrainMap, maxCellCapacity)
+func printYearlyReport(year int, terrainMap *simtypes.TerrainMap, populationModel *PopulationModel) {
+	stats := summarizeTerrainPopulation(terrainMap, populationModel)
 	println(fmt.Sprintf("Year %d", year))
 	println("Population")
 	println(fmt.Sprintf("  total:              %d", stats.totalPopulation))
@@ -81,8 +85,8 @@ type terrainPopulationSummary struct {
 	overCapacityCells  int
 }
 
-func summarizeTerrainPopulation(terrainMap *simtypes.TerrainMap, maxCellCapacity float64) terrainPopulationSummary {
-	if terrainMap == nil {
+func summarizeTerrainPopulation(terrainMap *simtypes.TerrainMap, populationModel *PopulationModel) terrainPopulationSummary {
+	if terrainMap == nil || populationModel == nil {
 		return terrainPopulationSummary{}
 	}
 
@@ -91,8 +95,9 @@ func summarizeTerrainPopulation(terrainMap *simtypes.TerrainMap, maxCellCapacity
 	occupiedCells := 0
 	overCapacityCells := 0
 
-	for _, cell := range terrainMap.Cells {
-		cellCapacity := cell.FoodCapacity * maxCellCapacity
+	for i := range terrainMap.Cells {
+		cell := &terrainMap.Cells[i]
+		cellCapacity := populationModel.carryingCapacity(cell)
 		totalPopulation += cell.Population
 		totalCarryingCapacity += cellCapacity
 		if cell.Population > 0 {
