@@ -95,10 +95,8 @@ func (tc *TerrainClassifier) Classify(elevation, moisture, fertility, terrain *s
 }
 
 func (tc *TerrainClassifier) setInitialTerrainTypes(terrain *simtypes.Layer) error {
-	if tc.tm.IsInitialized() {
-		return nil
-	}
-
+	// Terrain classification owns the TerrainType field, so initialize it from
+	// the generated terrain layer regardless of the TerrainMap's initialized flag.
 	for x := 0; x < tc.tm.Width; x++ {
 		for y := 0; y < tc.tm.Height; y++ {
 			ter := terrain.Get(x, y)
@@ -159,8 +157,6 @@ func (tc *TerrainClassifier) classifyCell(
 	elevation, moisture, fertility float64,
 	neighbors NeighborTerrainStats,
 ) simtypes.TerrainType {
-	// Extremes are physical constraints. This prevents tiny high-elevation or
-	// low-elevation variations from being negotiated away by the score model.
 	if elevation <= WaterElevationThreshold {
 		return simtypes.TerrainTypeWater
 	}
@@ -176,39 +172,29 @@ func (tc *TerrainClassifier) scoreCell(
 	elevation, moisture, fertility float64,
 	neighbors NeighborTerrainStats,
 ) TerrainScores {
-	waterNeighbors := neighbors.fraction(neighbors.Water)
-	mountainNeighbors := neighbors.fraction(neighbors.Mountain)
-	forestNeighbors := neighbors.fraction(neighbors.Forest)
-	plainsNeighbors := neighbors.fraction(neighbors.Plains)
-
 	return TerrainScores{
-		Water: waterScore(
-			elevation,
-			moisture,
-			waterNeighbors,
-		),
+		Water: waterScore(elevation, moisture, neighbors.fraction(neighbors.Water)),
 		Plains: plainsScore(
 			elevation,
 			moisture,
 			fertility,
-			plainsNeighbors,
+			neighbors.fraction(neighbors.Plains),
 		),
 		Forest: forestScore(
 			elevation,
 			moisture,
 			fertility,
-			forestNeighbors,
+			neighbors.fraction(neighbors.Forest),
 		),
 		Mountain: mountainScore(
 			elevation,
 			fertility,
-			mountainNeighbors,
+			neighbors.fraction(neighbors.Mountain),
 		),
 	}
 }
 
 func waterScore(elevation, moisture, waterNeighbors float64) float64 {
-	// Water prefers low elevation, higher moisture, and adjacency to existing water.
 	lowland := 1 - normalizeRange(elevation, WaterElevationThreshold, MountainElevationThreshold)
 	return WaterElevationWeight*lowland +
 		WaterMoistureWeight*moisture +
